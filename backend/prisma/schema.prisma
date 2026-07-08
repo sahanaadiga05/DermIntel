@@ -1,0 +1,162 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         String        @id @default(uuid())
+  googleId   String        @unique
+  email      String        @unique
+  name       String
+  avatarUrl  String?
+  provider   AuthProvider  @default(GOOGLE)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  profile    Profile?
+  analyses   Analysis[]
+}
+
+model Profile {
+  id                   String             @id @default(uuid())
+  userId               String             @unique
+  skinType             SkinType
+  hairType             HairType
+  hairDensity          HairDensity
+  skinSensitivity      SkinSensitivity
+  primarySkinConcerns  Json
+  hairConcerns         Json
+  cosmeticAllergies    Json
+  otherAllergy         String?
+  makeupUsage          MakeupUsage
+  primarySkincareGoals Json
+  ageGroup             AgeGroup?
+  gender               Gender?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  completedAt          DateTime?
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Ingredient {
+  id                 String      @id @default(uuid())
+  name               String      @unique
+  scientificName     String?
+  purpose            String
+  riskLevel          RiskLevel
+  benefits           Json
+  sideEffects        Json
+  suitableSkinTypes  Json
+  avoidSkinTypes     Json
+  comedogenicRating  Int
+  irritationScore    Int
+  simpleExplanation  String
+  productLinks       ProductIngredient[]
+}
+
+model Product {
+  id              String              @id @default(uuid())
+  name            String
+  brand           String
+  category        String
+  ingredientsText String
+  description     String?
+  imageUrl        String?
+  analyses        Analysis[]
+  ingredients     ProductIngredient[]
+}
+
+model ProductIngredient {
+  productId    String
+  ingredientId String
+  product      Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@id([productId, ingredientId])
+}
+
+model Analysis {
+  id               String     @id @default(uuid())
+  userId           String
+  productId        String?
+  analyzedAt       DateTime   @default(now())
+  inputType        InputType
+  safetyScore      Float
+  suitabilityScore Float
+  verdict          String
+  pros             Json
+  cons             Json
+  profileSnapshot  Json
+  user             User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product          Product?   @relation(fields: [productId], references: [id], onDelete: SetNull)
+}
+
+enum AuthProvider {
+  GOOGLE
+}
+
+enum SkinType {
+  DRY
+  OILY
+  COMBINATION
+  NORMAL
+  SENSITIVE
+}
+
+enum HairType {
+  STRAIGHT
+  WAVY
+  CURLY
+  COILY
+}
+
+enum HairDensity {
+  THIN
+  MEDIUM
+  THICK
+}
+
+enum SkinSensitivity {
+  NOT_SENSITIVE
+  SLIGHTLY_SENSITIVE
+  MODERATELY_SENSITIVE
+  VERY_SENSITIVE
+}
+
+enum MakeupUsage {
+  NEVER
+  OCCASIONALLY
+  WEEKLY
+  DAILY
+}
+
+enum AgeGroup {
+  BELOW_18
+  AGE_18_25
+  AGE_26_35
+  AGE_36_45
+  ABOVE_45
+}
+
+enum Gender {
+  FEMALE
+  MALE
+  PREFER_NOT_TO_SAY
+  OTHER
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum InputType {
+  SEARCH
+  URL
+  MANUAL
+}
+

@@ -1,0 +1,15 @@
+{
+  "name": "dermintel",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev:frontend": "npm --workspace frontend run dev",
+    "dev:backend": "npm --workspace backend run dev",
+    "build": "npm --workspace frontend run build",
+    "lint": "npm --workspace frontend run lint"
+  }
+}
+
