@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { OnboardingFlow } from "@/components/onboarding-flow";
 import { useSessionStore } from "@/store/use-session-store";
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { initialized, isFetchingSession, token, profile } = useSessionStore();
+  const isEditing = searchParams.get("edit") === "1";
 
   useEffect(() => {
     if (!initialized || isFetchingSession) {
@@ -19,10 +21,10 @@ export default function OnboardingPage() {
       return;
     }
 
-    if (profile) {
+    if (profile && !isEditing) {
       router.replace("/dashboard");
     }
-  }, [initialized, isFetchingSession, profile, router, token]);
+  }, [initialized, isEditing, isFetchingSession, profile, router, token]);
 
   if (!initialized || isFetchingSession || !token) {
     return (
@@ -35,6 +37,5 @@ export default function OnboardingPage() {
     );
   }
 
-  return <OnboardingFlow />;
+  return <OnboardingFlow isEditing={isEditing} />;
 }
-

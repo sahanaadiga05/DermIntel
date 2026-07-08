@@ -21,22 +21,24 @@ function getTone(value) {
   return COLORS.low;
 }
 
-export function ScoreDonut({ value, label }) {
+export function ScoreDonut({ value, size = 152 }) {
   const safeValue = Math.max(0, Math.min(100, value));
   const data = [
     { name: "score", value: safeValue },
     { name: "remaining", value: 100 - safeValue }
   ];
+  const outerRadius = Math.round(size * 0.45);
+  const innerRadius = Math.round(size * 0.32);
 
   return (
-    <div className="relative h-44 w-44">
+    <div className="relative transition-transform duration-300" style={{ height: size, width: size }}>
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie
             data={data}
             dataKey="value"
-            innerRadius={52}
-            outerRadius={72}
+            innerRadius={innerRadius}
+            outerRadius={outerRadius}
             startAngle={90}
             endAngle={-270}
             stroke="none"
@@ -47,10 +49,9 @@ export function ScoreDonut({ value, label }) {
         </PieChart>
       </ResponsiveContainer>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-4xl font-bold text-ink">{safeValue}</span>
-        <span className="text-xs uppercase tracking-[0.25em] text-pine/60">{label}</span>
+        <span className="text-3xl font-semibold text-ink sm:text-[2rem]">{safeValue}</span>
+        <span className="text-[10px] uppercase tracking-[0.28em] text-pine/60">Score</span>
       </div>
     </div>
   );
 }
-

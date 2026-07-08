@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { BrandMark } from "@/components/brand-mark";
 import { useSessionStore } from "@/store/use-session-store";
 
-export default function AuthCallbackPage() {
+function AuthCallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { setSession, refreshSession, signOut } = useSessionStore();
-  const [message, setMessage] = useState("Completing your secure DermIntel sign-in...");
+  const [message, setMessage] = useState(
+    "Completing your secure DermIntel sign-in..."
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -41,7 +43,7 @@ export default function AuthCallbackPage() {
         }
 
         router.replace(payload.profile ? "/dashboard" : "/onboarding");
-      } catch (_error) {
+      } catch {
         signOut();
         if (isMounted) {
           setMessage("Your session could not be restored. Please try again.");
@@ -63,10 +65,25 @@ export default function AuthCallbackPage() {
           <BrandMark />
         </div>
         <div className="mx-auto h-12 w-12 animate-pulse rounded-full bg-pine/12" />
-        <h1 className="mt-6 text-2xl font-semibold text-ink">Setting up your DermIntel session</h1>
+        <h1 className="mt-6 text-2xl font-semibold text-ink">
+          Setting up your DermIntel session
+        </h1>
         <p className="mt-3 text-sm leading-6 text-ink/68">{message}</p>
       </div>
     </main>
   );
 }
 
+export default function AuthCallbackPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center">
+          <p>Loading...</p>
+        </main>
+      }
+    >
+      <AuthCallbackContent />
+    </Suspense>
+  );
+}
