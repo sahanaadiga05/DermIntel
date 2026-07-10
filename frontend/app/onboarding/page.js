@@ -1,41 +1,24 @@
-"use client";
+import { Suspense } from "react";
+import { OnboardingPageClient } from "./page-client";
 
-import { useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { OnboardingFlow } from "@/components/onboarding-flow";
-import { useSessionStore } from "@/store/use-session-store";
+function LoadingFallback() {
+  return (
+    <main className="flex min-h-screen items-center justify-center">
+      <div className="text-center">
+        <div className="mx-auto h-12 w-12 animate-pulse rounded-full bg-pine/12" />
+        <p className="mt-4 text-sm text-ink/62">Preparing your skin profile setup...</p>
+      </div>
+    </main>
+  );
+}
 
-export default function OnboardingPage() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const { initialized, isFetchingSession, token, profile } = useSessionStore();
-  const isEditing = searchParams.get("edit") === "1";
+export default function OnboardingPage({ searchParams }) {
+  const editValue = searchParams?.edit;
+  const isEditing = Array.isArray(editValue) ? editValue[0] === "1" : editValue === "1";
 
-  useEffect(() => {
-    if (!initialized || isFetchingSession) {
-      return;
-    }
-
-    if (!token) {
-      router.replace("/");
-      return;
-    }
-
-    if (profile && !isEditing) {
-      router.replace("/dashboard");
-    }
-  }, [initialized, isEditing, isFetchingSession, profile, router, token]);
-
-  if (!initialized || isFetchingSession || !token) {
-    return (
-      <main className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <div className="mx-auto h-12 w-12 animate-pulse rounded-full bg-pine/12" />
-          <p className="mt-4 text-sm text-ink/62">Preparing your skin profile setup...</p>
-        </div>
-      </main>
-    );
-  }
-
-  return <OnboardingFlow isEditing={isEditing} />;
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <OnboardingPageClient isEditing={isEditing} />
+    </Suspense>
+  );
 }
