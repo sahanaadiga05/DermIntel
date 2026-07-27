@@ -1,20 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
+  CheckCircle2,
   Globe,
   Link2,
   LoaderCircle,
   LogOut,
   Search,
   ShieldCheck,
-  Sparkles
+  Sparkles,
+  XCircle
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { analyzeInput } from "@/lib/analyzer";
-import { api } from "@/lib/api";
+import { API_BASE_URL, api } from "@/lib/api";
 import {
   ALLERGY_OPTIONS,
   formatDisplayValue,
@@ -32,12 +33,10 @@ import { BrandMark } from "@/components/brand-mark";
 import { ScoreDonut } from "@/components/score-donut";
 import { SectionCard } from "@/components/section-card";
 
-const defaultProduct = products[0].name;
-
 export function DashboardShell() {
   const router = useRouter();
   const { user, profile, signOut } = useSessionStore();
-  const [searchQuery, setSearchQuery] = useState(defaultProduct);
+  const [searchQuery, setSearchQuery] = useState("");
   const [productUrl, setProductUrl] = useState("");
   const [manualIngredients, setManualIngredients] = useState("");
   const [result, setResult] = useState(null);
@@ -45,24 +44,6 @@ export function DashboardShell() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [inputError, setInputError] = useState("");
 
-  useEffect(() => {
-    if (!profile) {
-      return;
-    }
-
-    setResult(
-      analyzeInput({
-        profile,
-        productName: defaultProduct,
-        manualIngredients: ""
-      })
-    );
-    setAnalysisMeta({
-      channel: "search",
-      label: defaultProduct,
-      processingTrace: []
-    });
-  }, [profile]);
 
   const profileSummary = useMemo(() => buildProfileSummary(profile), [profile]);
 
@@ -74,7 +55,7 @@ export function DashboardShell() {
     return {
       safety: result.safetyScore || 0,
       suitability: result.suitabilityScore || 0,
-      confidence: getConfidenceScore(result),
+      confidence: typeof result.confidenceScore === "number" ? result.confidenceScore : null,
       safetyStatus: getScoreStatus(result.safetyScore || 0),
       suitabilityStatus: getScoreStatus(result.suitabilityScore || 0)
     };
@@ -100,6 +81,24 @@ export function DashboardShell() {
 
     setIsAnalyzing(true);
     setInputError("");
+    setResult(null);
+    setAnalysisMeta(
+      trimmedUrl
+        ? {
+            channel: "url",
+            label: trimmedUrl,
+            processingTrace: buildPendingUrlTrace(),
+            message: "Starting verified ingredient search..."
+          }
+        : {
+            channel: trimmedIngredients ? "manual" : "search",
+            label: trimmedSearch || "Custom Ingredient List",
+            processingTrace: buildPendingAnalysisTrace(Boolean(trimmedIngredients)),
+            ingredientsText: trimmedIngredients,
+            ingredientList: normalizeVerifiedIngredientList(trimmedIngredients),
+            message: "Preparing personalized analysis..."
+          }
+    );
 
     try {
       let resolvedProductName = trimmedSearch;
@@ -107,7 +106,9 @@ export function DashboardShell() {
       let nextMeta = {
         channel: trimmedUrl ? "url" : trimmedIngredients ? "manual" : "search",
         label: trimmedUrl || trimmedSearch || "Custom Ingredient List",
-        processingTrace: []
+        processingTrace: buildPendingAnalysisTrace(Boolean(trimmedIngredients)),
+            ingredientsText: trimmedIngredients,
+        ingredientList: normalizeVerifiedIngredientList(trimmedIngredients)
       };
 
       if (trimmedUrl) {
@@ -116,33 +117,46 @@ export function DashboardShell() {
         });
         const resolution = response.data;
 
-        resolvedProductName =
-          resolution.suggestedProduct?.name ||
-          resolution.product?.name ||
-          resolution.resolvedName ||
-          trimmedSearch;
-        resolvedIngredients = resolution.suggestedProduct
-          ? ""
-          : resolution.ingredientsText || trimmedIngredients;
+        resolvedProductName = resolution.product?.name || trimmedSearch;
+        resolvedIngredients = resolution.ingredientsText || trimmedIngredients;
         nextMeta = {
           channel: "url",
-          label: resolution.product?.name || resolution.resolvedName,
+          status: resolution.status,
+          label: resolution.product?.name || trimmedUrl,
           category: resolution.product?.category,
           brand: resolution.product?.brand,
           platform: resolution.platform,
+          sourceWebsite: resolution.sourceWebsite,
+          extractionMethod: resolution.extractionMethod,
           ingredientSource: resolution.ingredientSource,
+          confidenceScore: resolution.confidenceScore,
+          ingredientCount: resolution.ingredientCount,
+          ingredientsText: resolution.ingredientsText,
+          ingredientList: normalizeVerifiedIngredientList(
+            resolution.ingredientList?.length ? resolution.ingredientList : resolution.ingredientsText
+          ),
           cacheHit: resolution.cacheHit,
-          fallbackRequired: resolution.fallbackRequired,
+          verifiedIngredients: resolution.verifiedIngredients,
           processingTrace: resolution.processingTrace || [],
-          message: resolution.message
+          message: resolution.message,
+          failureCode: resolution.failureCode,
+          communityFallbackAvailable: resolution.communityFallbackAvailable,
+          recommendedAction: resolution.recommendedAction,
+          productDetected: Boolean(resolution.product?.name || resolution.product?.brand || resolution.product?.variant)
         };
 
-        if (resolution.fallbackRequired && !resolvedIngredients) {
+        if (resolution.status === "NO_VERIFIED_INGREDIENTS" || !resolution.verifiedIngredients) {
           setAnalysisMeta(nextMeta);
           setResult(null);
-          setInputError(resolution.message);
+          setInputError(buildResolutionFailureMessage(resolution));
           return;
         }
+
+        nextMeta = {
+          ...nextMeta,
+          processingTrace: appendGeneratingAnalysisStep(nextMeta.processingTrace)
+        };
+        setAnalysisMeta(nextMeta);
       }
 
       if (!resolvedProductName && !resolvedIngredients) {
@@ -151,25 +165,54 @@ export function DashboardShell() {
         return;
       }
 
-      const analysis = analyzeInput({
+      const response = await api.post("/analysis", {
         profile,
         productName: resolvedProductName,
-        manualIngredients: resolvedIngredients
+        ingredientsText: resolvedIngredients
       });
 
-      setResult(analysis);
-      setAnalysisMeta(nextMeta);
+      if (response.data.status === "NO_VERIFIED_INGREDIENTS" || response.data.verifiedIngredients === false) {
+        setResult(null);
+        setAnalysisMeta({
+          ...nextMeta,
+          processingTrace: failGeneratingAnalysisStep(nextMeta.processingTrace, response.data.message),
+          message: response.data.message
+        });
+        setInputError(response.data.message);
+        return;
+      }
+
+      setResult(response.data);
+      setAnalysisMeta({
+        ...nextMeta,
+        processingTrace: completeGeneratingAnalysisStep(nextMeta.processingTrace)
+      });
     } catch (error) {
       const serverTrace = error.response?.data?.processingTrace || [];
+      const errorMessage = buildUrlResolutionErrorMessage(error);
       setResult(null);
-      setAnalysisMeta((previous) => ({
-        ...(previous || {}),
-        processingTrace: serverTrace
-      }));
-      setInputError(
-        error.response?.data?.message ||
-          "That product URL could not be resolved yet. Paste ingredients too, or try a clearer product page link."
+      setAnalysisMeta((previous) =>
+        trimmedUrl
+          ? {
+              ...(previous || {}),
+              channel: "url",
+              status: "URL_RESOLUTION_FAILED",
+              label: "URL analysis failed",
+              sourceUrl: trimmedUrl,
+              sourceWebsite: formatUrlForDisplay(trimmedUrl),
+              verifiedIngredients: false,
+              processingTrace: buildUrlFailureTrace(serverTrace, errorMessage),
+              message: errorMessage,
+              failureCode: error.response ? "URL_RESOLUTION_ERROR" : "API_UNREACHABLE",
+              communityFallbackAvailable: true,
+              recommendedAction: "PASTE_OR_UPLOAD_INGREDIENTS"
+            }
+          : {
+              ...(previous || {}),
+              processingTrace: serverTrace
+            }
       );
+      setInputError(errorMessage);
     } finally {
       setIsAnalyzing(false);
     }
@@ -381,16 +424,54 @@ export function DashboardShell() {
                     {analysisMeta.brand ? (
                       <p className="text-white/68">Detected brand: {analysisMeta.brand}</p>
                     ) : null}
+                    {analysisMeta.sourceWebsite ? (
+                      <p className="text-white/68">Verified source: {analysisMeta.sourceWebsite}</p>
+                    ) : null}
+                    {analysisMeta.extractionMethod ? (
+                      <p className="text-white/68">Extraction method: {analysisMeta.extractionMethod}</p>
+                    ) : null}
                     {analysisMeta.ingredientSource ? (
                       <p className="text-white/68">
                         Ingredient source: {analysisMeta.ingredientSource}
                       </p>
+                    ) : null}
+                    {typeof analysisMeta.confidenceScore === "number" ? (
+                      <p className="text-white/68">
+                        Verification confidence: {formatVerificationConfidence(analysisMeta.confidenceScore)}
+                      </p>
+                    ) : null}
+                    {analysisMeta.ingredientCount ? (
+                      <p className="text-white/68">Verified ingredients: {analysisMeta.ingredientCount}</p>
+                    ) : null}
+                    {analysisMeta.ingredientList?.length ? (
+                      <VerifiedIngredientsReadCard
+                        ingredients={analysisMeta.ingredientList}
+                        extractionMethod={analysisMeta.extractionMethod}
+                      />
                     ) : null}
                     {analysisMeta.cacheHit ? (
                       <p className="text-white/68">Returned from DermIntel cache for speed.</p>
                     ) : null}
                     {analysisMeta.message ? (
                       <p className="text-white/68">{analysisMeta.message}</p>
+                    ) : null}
+                    {analysisMeta.verifiedIngredients === false ? (
+                      <div className="rounded-2xl border border-white/12 bg-white/6 px-3 py-3 text-white/76">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/58">
+                          Retrieval status
+                        </p>
+                        <p className="mt-2 text-sm leading-6">
+                          {buildAnalysisMetaSummary(analysisMeta)}
+                        </p>
+                        <div className="mt-3 space-y-2 text-xs leading-5 text-white/66">
+                          {getResolutionActions(analysisMeta).map((action) => (
+                            <p key={action}>{action}</p>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {analysisMeta.processingTrace?.length ? (
+                      <ProcessingTrace steps={analysisMeta.processingTrace} />
                     ) : null}
                   </div>
                 ) : null}
@@ -431,13 +512,33 @@ export function DashboardShell() {
                     ) : null}
                   </div>
                 </div>
-                <div className="mt-5 rounded-2xl border border-pine/10 bg-mist px-4 py-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-pine/56">
-                    Final Verdict
-                  </p>
-                  <p className="mt-2 text-sm font-medium leading-6 text-ink">
-                    {result.verdict}
-                  </p>
+                <div className="mt-5 space-y-3">
+                  <div className="rounded-2xl border border-pine/10 bg-mist px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-pine/56">
+                      Final Verdict
+                    </p>
+                    <p className="mt-2 text-sm font-medium leading-6 text-ink">
+                      {result.verdict}
+                    </p>
+                  </div>
+                  {result.confidenceDetails?.length ? (
+                    <div className="rounded-2xl border border-ink/8 bg-white/78 px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-pine/56">
+                        Confidence Details
+                      </p>
+                      <div className="mt-3 space-y-2">
+                        {result.confidenceDetails.map((detail) => (
+                          <p
+                            key={detail}
+                            className="flex items-start gap-2 text-sm leading-6 text-ink/72"
+                          >
+                            <CheckCircle2 className="mt-1 h-4 w-4 flex-none text-emerald-600" />
+                            <span>{detail}</span>
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </motion.div>
             </div>
@@ -448,8 +549,8 @@ export function DashboardShell() {
           </>
         ) : (
           <p className="text-center text-sm leading-6 text-ink/58">
-            A score appears only after DermIntel has either found ingredients automatically or you
-            paste them manually.
+            A score appears only after DermIntel has verified ingredients from the product page,
+            a trusted source, or from ingredients you pasted manually.
           </p>
         )}
       </SectionCard>
@@ -476,19 +577,14 @@ export function DashboardShell() {
               </div>
 
               <div className="space-y-4">
-                <div className="rounded-[28px] border border-ink/8 bg-white/72 p-5">
-                  <p className="text-sm font-semibold text-ink">Matched ingredients</p>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {(result?.matchedIngredients || []).map((ingredient) => (
-                      <span
-                        key={ingredient.name}
-                        className="rounded-full bg-mist px-3 py-2 text-xs font-medium uppercase tracking-[0.12em] text-pine"
-                      >
-                        {ingredient.name}
-                      </span>
-                    ))}
-                  </div>
-                </div>
+                {analysisMeta?.ingredientList?.length ? (
+                  <VerifiedIngredientsListCard
+                    ingredients={analysisMeta.ingredientList}
+                    extractionMethod={analysisMeta.extractionMethod}
+                    sourceWebsite={analysisMeta.sourceWebsite}
+                  />
+                ) : null}
+                <IngredientBreakdownCard result={result} />
 
                 <div className="rounded-[28px] border border-ink/8 bg-white/72 p-5">
                   <p className="text-sm font-semibold text-ink">Unknown ingredients</p>
@@ -509,8 +605,8 @@ export function DashboardShell() {
             </div>
           ) : (
             <p className="text-sm leading-6 text-ink/62">
-              DermIntel needs a real product page or a pasted ingredient list before it can
-              generate a verdict.
+              DermIntel needs verified ingredients from a real product page or from your manual
+              ingredient paste before it can generate a verdict.
             </p>
           )}
         </SectionCard>
@@ -566,6 +662,176 @@ function SummaryRow({ label, value }) {
   );
 }
 
+function VerifiedIngredientsReadCard({ ingredients = [], extractionMethod = "" }) {
+  const visibleIngredients = ingredients.slice(0, 24);
+  const hiddenCount = Math.max(ingredients.length - visibleIngredients.length, 0);
+  const wasReadFromImage = String(extractionMethod || "").includes("product-image-ocr");
+
+  return (
+    <div className="rounded-2xl border border-white/12 bg-white/6 px-3 py-3 text-white/78">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/58">
+          {wasReadFromImage ? "Ingredients read from image" : "Verified ingredients read"}
+        </p>
+        <span className="rounded-full border border-white/12 bg-white/8 px-2.5 py-1 text-[11px] font-semibold text-white/68">
+          {ingredients.length}
+        </span>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {visibleIngredients.map((ingredient) => (
+          <span
+            key={ingredient}
+            className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs font-medium text-white/82"
+          >
+            {formatIngredientName(ingredient)}
+          </span>
+        ))}
+        {hiddenCount ? (
+          <span className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs font-medium text-white/62">
+            +{hiddenCount} more
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+function ProcessingTrace({ steps = [] }) {
+  return (
+    <div className="mt-4 rounded-2xl border border-white/12 bg-white/6 p-3">
+      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/55">Workflow</p>
+      <div className="mt-3 space-y-2">
+        {steps.map((step, index) => (
+          <div
+            key={`${step.label}-${step.state}-${index}`}
+            className="rounded-2xl border border-white/8 bg-white/6 px-3 py-2.5"
+          >
+            <div className="flex items-center gap-2 text-sm text-white/84">
+              <TraceIcon state={step.state} />
+              <span className="font-medium">{step.label}</span>
+            </div>
+            {step.details ? <p className="mt-1 text-xs leading-5 text-white/62">{step.details}</p> : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TraceIcon({ state }) {
+  if (state === "completed") {
+    return <CheckCircle2 className="h-4 w-4 text-emerald-300" />;
+  }
+
+  if (state === "failed") {
+    return <XCircle className="h-4 w-4 text-coral" />;
+  }
+
+  if (state === "in_progress") {
+    return <LoaderCircle className="h-4 w-4 animate-spin text-white/80" />;
+  }
+
+  return <div className="h-2.5 w-2.5 rounded-full bg-white/42" />;
+}
+
+function VerifiedIngredientsListCard({ ingredients = [], extractionMethod = "", sourceWebsite = "" }) {
+  const wasReadFromImage = String(extractionMethod || "").includes("product-image-ocr");
+  const sourceLabel = wasReadFromImage
+    ? "Read from product image OCR"
+    : sourceWebsite
+      ? `Read from ${sourceWebsite}`
+      : "Read from verified formula text";
+
+  return (
+    <div className="rounded-[28px] border border-pine/10 bg-white/78 p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-ink">Verified ingredients read</p>
+          <p className="mt-1 text-sm leading-6 text-ink/58">
+            {sourceLabel}. These are the ingredients DermIntel verified before calculating scores.
+          </p>
+        </div>
+        <span className="rounded-full bg-pine/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-pine">
+          {ingredients.length} ingredients
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        {ingredients.map((ingredient, index) => (
+          <div
+            key={`${ingredient}-${index}`}
+            className="flex items-center gap-3 rounded-2xl border border-ink/6 bg-mist/60 px-3 py-2.5 text-sm text-ink/78"
+          >
+            <span className="flex h-6 w-6 flex-none items-center justify-center rounded-full bg-pine/10 text-xs font-semibold text-pine">
+              {index + 1}
+            </span>
+            <span className="font-medium capitalize">{formatIngredientName(ingredient)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+function IngredientBreakdownCard({ result }) {
+  const rows = result?.ingredientBreakdown || [];
+
+  return (
+    <div className="rounded-[28px] border border-ink/8 bg-white/72 p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold text-ink">Estimated ingredient list</p>
+          <p className="mt-1 text-sm leading-6 text-ink/58">
+            Ingredient percentages are estimated only from verified INCI order.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 overflow-x-auto rounded-[22px] border border-ink/8 bg-white/80">
+        <table className="min-w-full divide-y divide-ink/8 text-sm">
+          <thead className="bg-mist/70 text-left text-xs uppercase tracking-[0.18em] text-pine/62">
+            <tr>
+              <th className="px-4 py-3 font-semibold">Ingredient</th>
+              <th className="px-4 py-3 font-semibold">Estimated %</th>
+              <th className="px-4 py-3 font-semibold">Purpose</th>
+              <th className="px-4 py-3 font-semibold">Risk</th>
+              <th className="px-4 py-3 font-semibold">Suitability</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-ink/6">
+            {rows.map((row) => (
+              <tr key={row.name}>
+                <td className="px-4 py-3">
+                  <p className="font-medium capitalize text-ink">{row.name}</p>
+                  <p className="mt-1 text-xs leading-5 text-ink/52">{row.explanation}</p>
+                </td>
+                <td className="px-4 py-3 text-ink/68">{row.estimatedRange}</td>
+                <td className="px-4 py-3 text-ink/68">{row.purpose}</td>
+                <td className="px-4 py-3">
+                  <span
+                    className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${getRiskBadgeClass(row.riskLevel)}`}
+                  >
+                    {row.riskLevel}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${getSuitabilityBadgeClass(row.suitability)}`}
+                  >
+                    {row.suitability}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {result?.ingredientEstimateDisclaimer ? (
+        <p className="mt-3 text-xs leading-5 text-ink/50">{result.ingredientEstimateDisclaimer}</p>
+      ) : null}
+    </div>
+  );
+}
+
 function InfoList({ icon, title, items = [], emptyMessage, tone }) {
   const toneClass =
     tone === "emerald"
@@ -591,6 +857,163 @@ function InfoList({ icon, title, items = [], emptyMessage, tone }) {
   );
 }
 
+function normalizeVerifiedIngredientList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || "").trim()).filter(Boolean);
+  }
+
+  return String(value || "")
+    .split(/[,;\n]+/)
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 2);
+}
+
+function formatIngredientName(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+function buildPendingUrlTrace() {
+  return [
+    {
+      label: "Detecting website",
+      state: "in_progress",
+      details: "Checking which website the product URL belongs to."
+    },
+    {
+      label: "Parsing retailer page",
+      state: "pending",
+      details: "Fetching the retailer page and extracting product metadata."
+    },
+    {
+      label: "Searching retailer page",
+      state: "pending",
+      details: "Looking for a verified INCI list on the retailer page."
+    },
+    {
+      label: "Checking structured metadata",
+      state: "pending",
+      details: "Checking JSON-LD and other structured product metadata."
+    },
+    {
+      label: "Searching official brand",
+      state: "pending",
+      details: "Searching official brand pages for a verified ingredient list."
+    },
+    {
+      label: "Searching trusted databases",
+      state: "pending",
+      details: "Checking trusted cosmetic databases such as INCI Decoder and CosDNA."
+    },
+    {
+      label: "Searching distributor pages",
+      state: "pending",
+      details: "Checking pharmacy and distributor product pages."
+    },
+    {
+      label: "Searching search engine results",
+      state: "pending",
+      details: "Checking broader web results only after trusted sources are exhausted."
+    }
+  ];
+}
+
+function buildPendingAnalysisTrace(isManualIngredients) {
+  return [
+    {
+      label: isManualIngredients ? "Verifying manual ingredient input" : "Selecting product data",
+      state: "completed",
+      details: isManualIngredients
+        ? "Using the ingredient list you pasted manually."
+        : "Using the selected product information for analysis."
+    },
+    {
+      label: "Generating AI analysis",
+      state: "in_progress",
+      details: "Calculating safety, suitability, and compatibility scores."
+    }
+  ];
+}
+
+function appendGeneratingAnalysisStep(steps = []) {
+  return [
+    ...steps,
+    {
+      label: "Generating AI analysis",
+      state: "in_progress",
+      details: "Verified ingredients found. Running personalized analysis."
+    }
+  ];
+}
+
+function completeGeneratingAnalysisStep(steps = []) {
+  return steps.map((step) =>
+    step.label === "Generating AI analysis"
+      ? {
+          ...step,
+          state: "completed",
+          details: "Verified ingredients analyzed successfully."
+        }
+      : step
+  );
+}
+
+function failGeneratingAnalysisStep(steps = [], message) {
+  return steps.map((step) =>
+    step.label === "Generating AI analysis"
+      ? {
+          ...step,
+          state: "failed",
+          details: message || "Analysis stopped because DermIntel could not verify the ingredients."
+        }
+      : step
+  );
+}
+
+function formatUrlForDisplay(value = "") {
+  try {
+    const parsed = new URL(value);
+    return `${parsed.hostname}${parsed.pathname}`.replace(/\/$/, "");
+  } catch (_error) {
+    return String(value || "").slice(0, 96);
+  }
+}
+
+function buildUrlResolutionErrorMessage(error) {
+  if (error.response?.data?.message) {
+    return error.response.data.message;
+  }
+
+  if (!error.response) {
+    return `DermIntel API is not reachable at ${API_BASE_URL}. Start the backend and try again.`;
+  }
+
+  return "That product URL could not be resolved yet. Paste ingredients too, upload the ingredient label, or try a clearer product page link.";
+}
+
+function buildUrlFailureTrace(serverTrace = [], message = "") {
+  if (serverTrace.length) {
+    return serverTrace.map((step, index) =>
+      index === serverTrace.length - 1 && step.state !== "failed"
+        ? {
+            ...step,
+            state: "failed",
+            details: step.details || message
+          }
+        : step
+    );
+  }
+
+  return [
+    {
+      label: "Connecting to DermIntel API",
+      state: "failed",
+      details: message || "The URL resolver request failed before DermIntel could inspect the product page."
+    },
+    ...buildPendingUrlTrace().slice(1)
+  ];
+}
 function getUserInitials(name, email) {
   const seed = (name || email || "DermIntel member").trim();
   const parts = seed.split(/\s+/).filter(Boolean);
@@ -723,29 +1146,85 @@ function getScoreBadgeClass(status) {
   return "bg-coral/12 text-coral";
 }
 
-function getConfidenceScore(result) {
-  if (!result) {
-    return null;
+function getRiskBadgeClass(riskLevel) {
+  if (riskLevel === "LOW") {
+    return "bg-emerald-50 text-emerald-700";
   }
 
-  const matchedCount = result.matchedIngredients?.length || 0;
-  const unknownCount = result.unknownIngredients?.length || 0;
-  const total = matchedCount + unknownCount;
-
-  if (!total) {
-    return null;
+  if (riskLevel === "MEDIUM") {
+    return "bg-amber-50 text-amber-700";
   }
 
-  let confidence = 92;
-  confidence -= unknownCount * 14;
-
-  if (matchedCount >= 5) {
-    confidence += 4;
+  if (riskLevel === "HIGH") {
+    return "bg-coral/12 text-coral";
   }
 
-  if (total <= 3) {
-    confidence -= 8;
-  }
-
-  return Math.max(42, Math.min(96, Math.round(confidence)));
+  return "bg-slate-100 text-slate-600";
 }
+
+function getSuitabilityBadgeClass(suitability) {
+  if (suitability === "Good Match") {
+    return "bg-emerald-50 text-emerald-700";
+  }
+
+  if (suitability === "Low Match") {
+    return "bg-coral/12 text-coral";
+  }
+
+  return "bg-slate-100 text-slate-600";
+}
+
+function formatVerificationConfidence(value) {
+  if (typeof value !== "number") {
+    return "-";
+  }
+
+  return `${Math.round(value <= 1 ? value * 100 : value)}%`;
+}
+
+
+
+function buildResolutionFailureMessage(resolution = {}) {
+  const productName = resolution.product?.name || resolution.product?.brand || "this product";
+
+  if (resolution.failureCode === "NO_PUBLIC_INGREDIENT_LIST") {
+    return `DermIntel found ${productName}, but no verified ingredient list was published on the retailer page, structured metadata, official brand site, or trusted databases.`;
+  }
+
+  return resolution.message || "We couldn't verify the ingredient list for this product yet.";
+}
+
+function buildAnalysisMetaSummary(meta = {}) {
+  const detectedProduct = meta.label || "this product";
+
+  if (meta.verifiedIngredients === false) {
+    return `We identified ${detectedProduct}, but we could not verify a trustworthy ingredient list from the checked sources, so DermIntel stopped before generating a formula analysis.`;
+  }
+
+  return meta.message || "Awaiting verified ingredient data.";
+}
+
+function getResolutionActions(meta = {}) {
+  const actions = [];
+
+  if (meta.productDetected) {
+    actions.push("Product identity was detected successfully.");
+  }
+
+  if (meta.recommendedAction === "UPLOAD_INGREDIENT_LABEL" || meta.communityFallbackAvailable) {
+    actions.push("Next best step: upload the ingredient label or paste the INCI list manually.");
+  } else {
+    actions.push("Next best step: paste the ingredient list manually for strict analysis.");
+  }
+
+  if (meta.failureCode === "NO_PUBLIC_INGREDIENT_LIST") {
+    actions.push("DermIntel refused to guess ingredients because none of the checked sources returned a verified formula.");
+  }
+
+  return actions;
+}
+
+
+
+
+

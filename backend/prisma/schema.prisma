@@ -42,8 +42,8 @@ model Profile {
 }
 
 model Ingredient {
-  id                 String      @id @default(uuid())
-  name               String      @unique
+  id                 String              @id @default(uuid())
+  name               String              @unique
   scientificName     String?
   purpose            String
   riskLevel          RiskLevel
@@ -55,18 +55,40 @@ model Ingredient {
   irritationScore    Int
   simpleExplanation  String
   productLinks       ProductIngredient[]
+  aliases            IngredientAlias[]
+}
+
+model IngredientAlias {
+  id              String     @id @default(uuid())
+  ingredientId    String
+  alias           String
+  normalizedAlias String     @unique
+  ingredient      Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 }
 
 model Product {
-  id              String              @id @default(uuid())
-  name            String
-  brand           String
-  category        String
-  ingredientsText String
-  description     String?
-  imageUrl        String?
-  analyses        Analysis[]
-  ingredients     ProductIngredient[]
+  id                   String                      @id @default(uuid())
+  name                 String
+  brand                String
+  category             String
+  canonicalName        String?
+  variant              String?
+  size                 String?
+  fingerprint          String?                     @unique
+  ingredientsText      String                      @default("")
+  description          String?
+  imageUrl             String?
+  sourceDomain         String?
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
+  analyses             Analysis[]
+  ingredients          ProductIngredient[]
+  verifiedFormulas     VerifiedFormula[]
+  sources              Source[]
+  searchAttempts       SearchAttempt[]
+  communitySubmissions CommunityFormulaSubmission[]
 }
 
 model ProductIngredient {
@@ -76,6 +98,124 @@ model ProductIngredient {
   ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
 
   @@id([productId, ingredientId])
+}
+
+model VerifiedFormula {
+  id              String                     @id @default(uuid())
+  productId       String
+  fingerprint     String
+  ingredientsText String
+  ingredientList  Json
+  ingredientCount Int
+  confidenceScore Float
+  sourceId        String?
+  verificationId  String?                    @unique
+  verifiedAt      DateTime                   @default(now())
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+  product         Product                    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  source          Source?                    @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  verification    Verification?              @relation(fields: [verificationId], references: [id], onDelete: SetNull)
+  searchAttempts  SearchAttempt[]
+  communitySubmissions CommunityFormulaSubmission[]
+
+  @@index([fingerprint])
+  @@index([productId, confidenceScore])
+}
+
+model Store {
+  id             String          @id @default(uuid())
+  name           String
+  domain         String?         @unique
+  sources        Source[]
+  searchAttempts SearchAttempt[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model Source {
+  id               String            @id @default(uuid())
+  kind             SourceKind
+  label            String
+  domain           String?
+  url              String
+  productId        String?
+  storeId          String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  product          Product?          @relation(fields: [productId], references: [id], onDelete: SetNull)
+  store            Store?            @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  verifiedFormulas VerifiedFormula[]
+  verifications    Verification[]
+  searchAttempts   SearchAttempt[]
+}
+
+model Verification {
+  id                String          @id @default(uuid())
+  status            AttemptStatus
+  confidenceScore   Float
+  matchedCount      Int
+  unknownCount      Int
+  aliasMatchedCount Int
+  ingredientCount   Int
+  rule              String?
+  reason            String?
+  sourceId          String?
+  verifiedAt        DateTime        @default(now())
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  source            Source?         @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  formula           VerifiedFormula?
+}
+
+model SearchAttempt {
+  id                String          @id @default(uuid())
+  productId         String?
+  verifiedFormulaId String?
+  sourceId          String?
+  storeId           String?
+  fingerprint       String
+  stage             String
+  url               String?
+  sourceWebsite     String?
+  extractionMethod  String?
+  status            AttemptStatus
+  durationMs        Int             @default(0)
+  candidateCount    Int             @default(0)
+  matchedCount      Int             @default(0)
+  confidenceScore   Float           @default(0)
+  reason            String?
+  createdAt         DateTime        @default(now())
+  product           Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+  verifiedFormula   VerifiedFormula? @relation(fields: [verifiedFormulaId], references: [id], onDelete: SetNull)
+  source            Source?         @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  store             Store?          @relation(fields: [storeId], references: [id], onDelete: SetNull)
+
+  @@index([fingerprint, createdAt])
+}
+
+model CommunityFormulaSubmission {
+  id                      String                @id @default(uuid())
+  productId               String?
+  fingerprint             String
+  submittedBy             String?
+  sourceUrl               String?
+  imageUrl                String?
+  rawOcrText              String?
+  extractedIngredientsText String?
+  ingredientList          Json
+  extractionMethod        String?
+  verificationStatus      AttemptStatus
+  reviewStatus            CommunityReviewStatus @default(PENDING_REVIEW)
+  reviewNotes             String?
+  confidenceScore         Float                 @default(0)
+  verifiedFormulaId       String?
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  product                 Product?              @relation(fields: [productId], references: [id], onDelete: SetNull)
+  verifiedFormula         VerifiedFormula?      @relation(fields: [verifiedFormulaId], references: [id], onDelete: SetNull)
+
+  @@index([fingerprint, createdAt])
 }
 
 model Analysis {
@@ -160,3 +300,29 @@ enum InputType {
   MANUAL
 }
 
+enum SourceKind {
+  RETAILER
+  OFFICIAL_BRAND
+  STRUCTURED_METADATA
+  TRUSTED_DATABASE
+  PHARMACY
+  SEARCH_ENGINE
+  AI
+  KNOWLEDGE_BASE
+  COMMUNITY
+}
+
+enum AttemptStatus {
+  STARTED
+  COMPLETED
+  FAILED
+  SKIPPED
+  VERIFIED
+}
+
+enum CommunityReviewStatus {
+  PENDING_REVIEW
+  AUTO_VERIFIED
+  APPROVED
+  REJECTED
+}

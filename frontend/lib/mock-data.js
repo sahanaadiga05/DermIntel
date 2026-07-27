@@ -1,41 +1,70 @@
 export const products = [
   {
     id: "prod-1",
-    name: "Cetaphil Moisturizing Cream",
+    name: "Cetaphil Gentle Skin Cleanser",
     brand: "Cetaphil",
-    category: "Moisturizer",
-    ingredients: ["glycerin", "niacinamide", "ceramide np", "fragrance"]
+    category: "Face Wash",
+    ingredients: [
+      "water",
+      "glycerin",
+      "cetearyl alcohol",
+      "panthenol",
+      "niacinamide",
+      "pantolactone",
+      "xanthan gum",
+      "sodium cocoyl isethionate",
+      "sodium benzoate",
+      "citric acid"
+    ]
   },
   {
     id: "prod-2",
-    name: "CeraVe PM Facial Lotion",
-    brand: "CeraVe",
+    name: "Cetaphil Moisturizing Cream",
+    brand: "Cetaphil",
     category: "Moisturizer",
-    ingredients: ["glycerin", "niacinamide", "ceramide np", "hyaluronic acid"]
+    ingredients: ["water", "glycerin", "cetearyl alcohol", "petrolatum", "niacinamide", "ceramide np", "panthenol"]
   },
   {
     id: "prod-3",
-    name: "Minimalist Acne Repair Serum",
-    brand: "Minimalist",
-    category: "Serum",
-    ingredients: ["niacinamide", "salicylic acid", "glycerin"]
+    name: "CeraVe PM Facial Lotion",
+    brand: "CeraVe",
+    category: "Moisturizer",
+    ingredients: ["water", "glycerin", "niacinamide", "ceramide np", "hyaluronic acid", "panthenol"]
   },
   {
     id: "prod-4",
-    name: "Rich Coconut Body Cream",
-    brand: "Glow Theory",
-    category: "Moisturizer",
-    ingredients: ["coconut oil", "fragrance", "alcohol denat"]
+    name: "Minimalist Acne Repair Serum",
+    brand: "Minimalist",
+    category: "Serum",
+    ingredients: ["water", "niacinamide", "salicylic acid", "glycerin", "panthenol"]
+  },
+  {
+    id: "prod-5",
+    name: "Dove Original Beauty Bar",
+    brand: "Dove",
+    category: "Body Wash",
+    ingredients: ["sodium cocoyl isethionate", "water", "fragrance", "glycerin"]
   }
 ];
 
 export const recentSearches = [
+  "Cetaphil Gentle Skin Cleanser",
   "Cetaphil Moisturizing Cream",
-  "Minimalist Acne Repair Serum",
-  "CeraVe PM Facial Lotion"
+  "Minimalist Acne Repair Serum"
 ];
 
 export const ingredients = [
+  {
+    name: "water",
+    purpose: "Solvent",
+    riskLevel: "LOW",
+    benefits: [],
+    comedogenicRating: 0,
+    irritationScore: 0,
+    suitableSkinTypes: ["DRY", "SENSITIVE", "OILY", "COMBINATION", "NORMAL"],
+    avoidSkinTypes: [],
+    tags: ["base"]
+  },
   {
     name: "glycerin",
     purpose: "Humectant",
@@ -43,7 +72,7 @@ export const ingredients = [
     benefits: ["Hydration", "Barrier support"],
     comedogenicRating: 0,
     irritationScore: 0,
-    suitableSkinTypes: ["DRY", "SENSITIVE", "OILY"],
+    suitableSkinTypes: ["DRY", "SENSITIVE", "OILY", "COMBINATION", "NORMAL"],
     avoidSkinTypes: [],
     tags: ["hydrating"]
   },
@@ -54,7 +83,7 @@ export const ingredients = [
     benefits: ["Brightening", "Sebum balance"],
     comedogenicRating: 0,
     irritationScore: 0,
-    suitableSkinTypes: ["OILY", "SENSITIVE", "COMBINATION"],
+    suitableSkinTypes: ["OILY", "SENSITIVE", "COMBINATION", "NORMAL", "DRY"],
     avoidSkinTypes: [],
     tags: ["anti-acne", "barrier-support"]
   },
@@ -99,7 +128,7 @@ export const ingredients = [
     comedogenicRating: 4,
     irritationScore: 1,
     suitableSkinTypes: ["DRY"],
-    avoidSkinTypes: ["OILY", "ACNE"],
+    avoidSkinTypes: ["OILY"],
     tags: ["heavy-oil", "occlusive"]
   },
   {

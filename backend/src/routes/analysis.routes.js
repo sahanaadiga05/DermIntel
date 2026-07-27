@@ -1,12 +1,17 @@
 import { Router } from "express";
 import { z } from "zod";
-import { analyzeFormula } from "../lib/scoring.js";
+import { scoreVerifiedFormula } from "../services/scoring-service.js";
 
 const router = Router();
 
 const analysisProfileSchema = z.object({
   skinType: z.enum(["DRY", "OILY", "SENSITIVE", "COMBINATION", "NORMAL"]),
+  skinSensitivity: z
+    .enum(["NOT_SENSITIVE", "SLIGHTLY_SENSITIVE", "MODERATELY_SENSITIVE", "VERY_SENSITIVE"])
+    .optional()
+    .default("NOT_SENSITIVE"),
   primarySkinConcerns: z.array(z.string()).default([]),
+  primarySkincareGoals: z.array(z.string()).default([]),
   cosmeticAllergies: z.array(z.string()).default([]),
   otherAllergy: z.string().optional().nullable().default(null)
 });
@@ -17,10 +22,10 @@ const analysisSchema = z.object({
   profile: analysisProfileSchema
 });
 
-router.post("/", (request, response, next) => {
+router.post("/", async (request, response, next) => {
   try {
     const payload = analysisSchema.parse(request.body);
-    const result = analyzeFormula(payload);
+    const result = await scoreVerifiedFormula(payload);
     response.json(result);
   } catch (error) {
     next(error);
@@ -28,4 +33,3 @@ router.post("/", (request, response, next) => {
 });
 
 export default router;
-

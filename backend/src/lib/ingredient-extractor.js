@@ -1,16 +1,31 @@
 import {
   detectBrand,
   detectCategory,
+  extractCoreProductName,
+  extractProductSku,
   normalizeIngredientList,
   normalizeProductName,
   normalizeWhitespace
 } from "./product-normalizer.js";
+import { extractDomIngredientCandidates } from "./pipeline/dom-extractor.js";
+import { createIngredientCandidate } from "./pipeline/ingredient-candidate.js";
+import { prioritizeIngredientCandidatesWithAi } from "./pipeline/ai-ingredient-extractor.js";
+import { extractStructuredIngredientCandidates, extractStructuredProductData } from "./pipeline/structured-data-extractor.js";
+
+const MARKETING_BLACKLIST = [
+  "key ingredients",
+  "benefits",
+  "why you'll love it",
+  "why we love it",
+  "good to know",
+  "hero ingredients"
+];
 
 function decodeHtml(value = "") {
   return value
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, "\"")
+    .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
     .replace(/\s+/g, " ")
     .trim();
@@ -35,7 +50,6 @@ export function extractMetaContent(html = "", key) {
 
   for (const pattern of patterns) {
     const match = html.match(pattern);
-
     if (match?.[1]) {
       return decodeHtml(match[1]);
     }
@@ -84,14 +98,18 @@ export function extractJsonLdProduct(html = "") {
     if (productNode) {
       return {
         name: normalizeProductName(productNode.name || ""),
+        canonicalName: extractCoreProductName(productNode.name || "", {
+          brand: typeof productNode.brand === "string" ? productNode.brand : productNode.brand?.name || "",
+          category: detectCategory(productNode.name || "", productNode.description || "")
+        }),
         brand:
           typeof productNode.brand === "string"
             ? productNode.brand
             : productNode.brand?.name || "",
         image: Array.isArray(productNode.image) ? productNode.image[0] : productNode.image || "",
         description: normalizeWhitespace(productNode.description || ""),
-        ingredients:
-          normalizeIngredientList(productNode.ingredients || productNode.material || productNode.additionalProperty?.value || "")
+        ingredients: normalizeIngredientList(productNode.ingredients || productNode.material || ""),
+        sku: extractProductSku(productNode.sku, productNode.mpn, productNode.productID)
       };
     }
   }
@@ -114,74 +132,198 @@ function extractTitle(html = "", fallback = "") {
 }
 
 function extractHtmlImage(html = "") {
-  return (
-    extractMetaContent(html, "og:image") ||
-    extractMetaContent(html, "twitter:image") ||
-    ""
-  );
+  return extractMetaContent(html, "og:image") || extractMetaContent(html, "twitter:image") || "";
 }
 
 function extractDescription(html = "") {
-  return (
-    extractMetaContent(html, "og:description") ||
-    extractMetaContent(html, "description") ||
-    ""
+  return extractMetaContent(html, "og:description") || extractMetaContent(html, "description") || "";
+}
+
+function extractHtmlSku(html = "") {
+  return extractProductSku(
+    extractMetaContent(html, "sku"),
+    extractMetaContent(html, "product:sku"),
+    html
   );
+}
+
+function buildOfficialSectionPattern(label) {
+  return new RegExp(`${label}[^a-z0-9]{0,12}([a-z0-9()/%+,.\\-\\s]{40,2400})`, "i");
 }
 
 function cleanIngredientSection(value = "") {
   return normalizeIngredientList(
     value
-      .split(/(?:directions|how to use|benefits|description|about this item|usage|warnings|manufacturer)/i)[0]
+      .split(/(?:directions|how to use|benefits|about this item|usage|warnings|manufacturer|customer care|country of origin)/i)[0]
       .trim()
   );
 }
 
+function isLikelyMarketingList(value = "") {
+  const normalized = value.toLowerCase();
+  return MARKETING_BLACKLIST.some((phrase) => normalized.includes(phrase));
+}
+
+function looksLikeIngredientList(value = "") {
+  if (isLikelyMarketingList(value)) {
+    return false;
+  }
+
+  const items = cleanIngredientSection(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (items.length < 3) {
+    return false;
+  }
+
+  const ingredientLikeCount = items.filter((item) => /^[a-z0-9()/%+\-\s]{3,}$/i.test(item)).length;
+  return ingredientLikeCount >= Math.max(3, Math.floor(items.length * 0.75));
+}
+
+function scoreIngredientCandidate(candidate) {
+  const label = `${candidate.ingredientSource || ""} ${candidate.metadata?.matchedHeading || ""} ${candidate.metadata?.sourceBlock || ""}`.toLowerCase();
+  const count = candidate.parsedIngredientList?.length || 0;
+  let score = Math.min(count, 30);
+
+  if (/full ingredients?|inci|complete ingredients?|composition/.test(label)) {
+    score += 40;
+  }
+
+  if (/ingredients?/.test(label)) {
+    score += 12;
+  }
+
+  if (/key ingredients?|hero ingredients?|benefits|why/.test(label)) {
+    score -= 35;
+  }
+
+  if (count < 8) {
+    score -= 20;
+  }
+
+  return score;
+}
+
+function rankIngredientCandidates(candidates = []) {
+  return [...candidates].sort((left, right) => scoreIngredientCandidate(right) - scoreIngredientCandidate(left));
+}
+
 export function extractIngredientsText(html = "") {
   const text = stripHtml(html);
-  const patterns = [
-    /ingredients?\s*[:\-]\s*([a-z0-9(),.%/+\-\s]{30,1800})/i,
-    /full ingredients?\s*[:\-]?\s*([a-z0-9(),.%/+\-\s]{30,1800})/i,
-    /inci\s*[:\-]?\s*([a-z0-9(),.%/+\-\s]{30,1800})/i,
-    /composition\s*[:\-]?\s*([a-z0-9(),.%/+\-\s]{30,1800})/i,
-    /key ingredients?\s*[:\-]?\s*([a-z0-9(),.%/+\-\s]{30,1800})/i,
-    /product details\s*[:\-]?\s*([a-z0-9(),.%/+\-\s]{30,1800})/i
+  const sectionPatterns = [
+    buildOfficialSectionPattern("ingredients"),
+    buildOfficialSectionPattern("full ingredients"),
+    buildOfficialSectionPattern("inci"),
+    /manufacturer[^a-z0-9]{0,12}ingredients[^a-z0-9]{0,12}([a-z0-9()/%+,.\-\s]{40,2400})/i,
+    /product description[^a-z0-9]{0,24}ingredients[^a-z0-9]{0,12}([a-z0-9()/%+,.\-\s]{40,2400})/i
   ];
 
-  for (const pattern of patterns) {
+  for (const pattern of sectionPatterns) {
     const match = text.match(pattern);
-
-    if (match?.[1]) {
-      const cleaned = cleanIngredientSection(match[1]);
-
-      if (cleaned.split(",").length >= 3) {
-        return cleaned;
-      }
+    if (match?.[1] && looksLikeIngredientList(match[1])) {
+      return cleanIngredientSection(match[1]);
     }
   }
 
   return "";
 }
 
-export function extractProductInfo(html = "", fallbackName = "", siteHints = {}) {
-  const jsonLd = extractJsonLdProduct(html);
-  const title = extractTitle(html, fallbackName);
-  const description = extractDescription(html);
-  const ingredientsFromHtml = extractIngredientsText(html);
+export async function extractIngredientCandidates(html = "", options = {}) {
+  const { sourceUrl = "", sourceWebsite = "", product = null } = options;
+  const candidates = [];
 
-  const name = normalizeProductName(jsonLd?.name || title || fallbackName);
-  const brand = jsonLd?.brand || detectBrand(name, description, siteHints.brandHint || "");
-  const category = detectCategory(name, description, siteHints.categoryHint || "");
-  const image = jsonLd?.image || extractHtmlImage(html);
-  const ingredients = jsonLd?.ingredients || ingredientsFromHtml;
+  const domCandidates = await extractDomIngredientCandidates({
+    html,
+    sourceUrl,
+    sourceWebsite,
+    product
+  });
+  candidates.push(...domCandidates);
+
+  const structuredCandidates = extractStructuredIngredientCandidates({
+    html,
+    sourceUrl,
+    sourceWebsite,
+    product
+  });
+  candidates.push(...structuredCandidates);
+
+  const jsonLd = extractJsonLdProduct(html);
+  if (jsonLd?.ingredients) {
+    candidates.push(
+      createIngredientCandidate({
+        sourceUrl,
+        sourceWebsite,
+        stage: "structured-data",
+        extractionMethod: "json-ld",
+        ingredientSource: "json-ld",
+        rawExtractedIngredients: jsonLd.ingredients,
+        metadata: {
+          sourceBlock: "json-ld"
+        },
+        product
+      })
+    );
+  }
+
+  const regexFallback = extractIngredientsText(html);
+  if (regexFallback) {
+    candidates.push(
+      createIngredientCandidate({
+        sourceUrl,
+        sourceWebsite,
+        stage: "fallback",
+        extractionMethod: "regex-fallback",
+        ingredientSource: "regex",
+        rawExtractedIngredients: regexFallback,
+        metadata: {
+          sourceBlock: "regex-fallback"
+        },
+        product
+      })
+    );
+  }
+
+  return prioritizeIngredientCandidatesWithAi({
+    candidates: rankIngredientCandidates(candidates),
+    pageText: stripHtml(html)
+  });
+}
+
+export async function extractProductInfo(html = "", fallbackName = "", siteHints = {}) {
+  const jsonLd = extractJsonLdProduct(html);
+  const structured = extractStructuredProductData(html);
+  const title = extractTitle(html, fallbackName);
+  const description = structured?.description || jsonLd?.description || extractDescription(html);
+  const candidates = await extractIngredientCandidates(html, {
+    sourceUrl: siteHints.sourceUrl || "",
+    sourceWebsite: siteHints.sourceWebsite || "",
+    product: null
+  });
+  const ingredientsFromCandidates = candidates[0]?.rawExtractedIngredients || "";
+
+  const rawName = jsonLd?.name || structured?.name || title || fallbackName;
+  const brand = jsonLd?.brand || structured?.brand || detectBrand(rawName, description, siteHints.brandHint || "");
+  const category = detectCategory(rawName, description, siteHints.categoryHint || "");
+  const normalizedName = normalizeProductName(rawName);
+  const canonicalName = extractCoreProductName(rawName, { brand, category });
+  const image = jsonLd?.image || structured?.image || extractHtmlImage(html);
+  const ingredients = ingredientsFromCandidates || jsonLd?.ingredients || "";
+  const sku = extractProductSku(structured?.sku, jsonLd?.sku, extractHtmlSku(html), siteHints.sourceUrl || "", html);
 
   return {
-    name,
+    name: normalizedName,
+    canonicalName,
     brand,
     category,
+    sku,
     image,
     description,
-    ingredients
+    ingredients,
+    ingredientCandidates: candidates
   };
 }
+
 

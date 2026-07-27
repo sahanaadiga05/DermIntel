@@ -1,17 +1,13 @@
-import { ingredientCatalog, productCatalog } from "../data/mock-data.js";
-
-const RISK_PENALTY = {
-  LOW: 2,
-  MEDIUM: 9,
-  HIGH: 18
-};
+import { productCatalog } from "../data/mock-data.js";
+import { verifyIngredientCandidate } from "./url-analysis/ingredient-verifier.js";
+import { calculateConfidenceScore } from "./formula-analysis/confidence-calculator.js";
+import { estimateConcentration } from "./formula-analysis/concentration-estimator.js";
+import { calculateSafetyScore } from "./formula-analysis/safety-calculator.js";
+import { calculateSuitabilityScore } from "./formula-analysis/suitability-calculator.js";
+import { buildVerdict } from "./formula-analysis/verdict-builder.js";
 
 function normalize(value = "") {
   return value.trim().toLowerCase();
-}
-
-function clamp(value, max = 100) {
-  return Math.max(0, Math.min(max, Math.round(value)));
 }
 
 function normalizeProfile(profile) {
@@ -25,27 +21,46 @@ function normalizeProfile(profile) {
 
   return {
     skinType: profile.skinType,
+    skinSensitivity: profile.skinSensitivity || "NOT_SENSITIVE",
     concerns: profile.primarySkinConcerns || [],
+    goals: profile.primarySkincareGoals || [],
     allergies
   };
 }
 
-function buildVerdict(safetyScore, suitabilityScore) {
-  const overall = (safetyScore + suitabilityScore) / 2;
+function buildScoredIngredientRows(ingredientRows = []) {
+  return ingredientRows.map((row, index) => {
+    const displayName = row.ingredient?.name || row.canonicalName || row.normalizedInput;
+    const concentration = estimateConcentration(index, displayName);
 
-  if (overall >= 82) {
-    return "Good fit overall, with only limited concerns.";
-  }
+    return {
+      rawName: row.rawName,
+      normalizedInput: row.normalizedInput,
+      displayName,
+      ingredient: row.ingredient,
+      matchType: row.matchType,
+      estimatedRange: concentration.estimatedRange,
+      influenceWeight: concentration.influenceWeight,
+      estimationReason: concentration.estimationReason,
+      purpose:
+        row.ingredient?.displayPurpose ||
+        row.ingredient?.purpose ||
+        "Ingredient role not mapped yet",
+      riskLevel: row.ingredient?.riskLevel || "UNKNOWN"
+    };
+  });
+}
 
-  if (overall >= 68) {
-    return "Moderate fit. Check the warnings before regular use.";
-  }
-
-  if (overall >= 50) {
-    return "Risky fit. This formula has multiple profile conflicts.";
-  }
-
-  return "Poor fit for this profile. DermIntel would avoid this formula.";
+function buildAlternatives(matchedProduct) {
+  return productCatalog
+    .filter((product) => product.name !== matchedProduct?.name)
+    .slice(0, 3)
+    .map((product) => ({
+      id: product.id,
+      name: product.name,
+      brand: product.brand,
+      category: product.category
+    }));
 }
 
 export function searchProducts(query = "") {
@@ -56,7 +71,7 @@ export function searchProducts(query = "") {
   }
 
   return productCatalog.filter((product) =>
-    `${product.brand} ${product.name}`.toLowerCase().includes(normalizedQuery)
+    `${product.brand} ${product.name} ${product.category}`.toLowerCase().includes(normalizedQuery)
   );
 }
 
@@ -64,118 +79,120 @@ export function findProductByName(name = "") {
   return productCatalog.find((product) => product.name.toLowerCase() === normalize(name));
 }
 
-export function analyzeFormula({ profile, productName, ingredientsText = "" }) {
-  const normalizedProfile = normalizeProfile(profile);
+export async function analyzeFormula({ profile, productName, ingredientsText = "" }) {
   const matchedProduct = findProductByName(productName);
-  const ingredientNames = matchedProduct
-    ? matchedProduct.ingredients
-    : ingredientsText
-        .split(",")
-        .map((entry) => normalize(entry))
-        .filter(Boolean);
+  const normalizedProfile = normalizeProfile(profile);
 
-  const matchedIngredients = ingredientNames
-    .map((name) => ingredientCatalog.find((ingredient) => ingredient.name === name))
-    .filter(Boolean);
-  const unknownIngredients = ingredientNames.filter(
-    (name) => !ingredientCatalog.some((ingredient) => ingredient.name === name)
-  );
+  const candidate = matchedProduct
+    ? {
+        sourceUrl: "catalog://product",
+        sourceWebsite: matchedProduct.brand,
+        stage: "catalog",
+        extractionMethod: "catalog-verified",
+        ingredientSource: "catalog",
+        rawExtractedIngredients: matchedProduct.ingredientsText,
+        parsedIngredientList: matchedProduct.ingredients,
+        metadata: {},
+        product: matchedProduct
+      }
+    : {
+        sourceUrl: "manual://ingredients",
+        sourceWebsite: "Manual Input",
+        stage: "manual",
+        extractionMethod: "manual-input",
+        ingredientSource: "manual",
+        rawExtractedIngredients: ingredientsText,
+        parsedIngredientList: [],
+        metadata: {}
+      };
 
-  let safetyScore = 88;
-  let suitabilityScore = 84;
-  const pros = [];
-  const cons = [];
-
-  matchedIngredients.forEach((ingredient) => {
-    safetyScore -= RISK_PENALTY[ingredient.riskLevel];
-    safetyScore -= ingredient.irritationScore * 7;
-    safetyScore -= ingredient.comedogenicRating * 5;
-
-    if (normalizedProfile.skinType === "OILY" && ingredient.comedogenicRating >= 3) {
-      suitabilityScore -= 18;
-      cons.push(`${ingredient.name} may clog pores or feel heavy for oily skin.`);
-    }
-
-    if (
-      normalizedProfile.skinType === "SENSITIVE" &&
-      (ingredient.irritationScore >= 2 || ingredient.tags.includes("fragrance"))
-    ) {
-      suitabilityScore -= 18;
-      cons.push(`${ingredient.name} can irritate sensitive skin.`);
-    }
-
-    if (normalizedProfile.skinType === "DRY" && ingredient.tags.includes("hydrating")) {
-      suitabilityScore += 5;
-      pros.push(`${ingredient.name} helps reinforce hydration.`);
-    }
-
-    if (normalizedProfile.concerns.includes("ACNE") && ingredient.tags.includes("anti-acne")) {
-      suitabilityScore += 6;
-      pros.push(`${ingredient.name} supports acne-focused treatment goals.`);
-    }
-
-    if (ingredient.suitableSkinTypes.includes(normalizedProfile.skinType)) {
-      suitabilityScore += 4;
-    }
-
-    if (ingredient.avoidSkinTypes.includes(normalizedProfile.skinType)) {
-      suitabilityScore -= 14;
-      cons.push(`${ingredient.name} is commonly avoided for ${normalizedProfile.skinType.toLowerCase()} skin.`);
-    }
-
-    const allergyHit = normalizedProfile.allergies.some((allergy) => {
-      const compactAllergy = allergy.replaceAll(" ", "");
-      return (
-        ingredient.name.includes(allergy) ||
-        ingredient.name.includes(compactAllergy) ||
-        ingredient.tags.includes(allergy)
-      );
-    });
-
-    if (allergyHit) {
-      safetyScore -= 8;
-      suitabilityScore -= 22;
-      cons.push(`${ingredient.name} overlaps with a recorded allergy trigger.`);
-    }
+  const verifiedCandidate = await verifyIngredientCandidate(candidate, {
+    productName: matchedProduct?.name || productName || "Custom Ingredient List",
+    brand: matchedProduct?.brand || "Manual Input",
+    minIngredientCount: 8
   });
 
-  if (unknownIngredients.length) {
-    safetyScore -= unknownIngredients.length * 6;
-    suitabilityScore -= unknownIngredients.length * 4;
-    cons.push(
-      `${unknownIngredients.length} ingredient${unknownIngredients.length > 1 ? "s are" : " is"} not in the current intelligence database, so the score is reduced for uncertainty.`
-    );
+  if (!verifiedCandidate.verified) {
+    return {
+      status: "NO_VERIFIED_INGREDIENTS",
+      verifiedIngredients: false,
+      product: matchedProduct || null,
+      productName: matchedProduct?.name || productName || "Custom Ingredient List",
+      matchedIngredients: [],
+      analyzedIngredients: [],
+      unknownIngredients: verifiedCandidate.parsedIngredientList || [],
+      ingredientBreakdown: [],
+      ingredientEstimateDisclaimer: null,
+      safetyScore: null,
+      suitabilityScore: null,
+      confidenceScore: 0,
+      confidenceDetails: [],
+      verdict: null,
+      pros: [],
+      cons: [],
+      alternatives: [],
+      message:
+        "We couldn't verify the ingredient list for this product. Please paste the ingredients manually or try another source."
+    };
   }
 
-  if (ingredientNames.length >= 10) {
-    safetyScore -= Math.min(10, ingredientNames.length - 9);
-  }
+  const ingredientRows = buildScoredIngredientRows(verifiedCandidate.ingredientRows || []);
+  const matchedIngredients = ingredientRows.filter((row) => row.ingredient).map((row) => row.ingredient);
+  const unknownIngredients = ingredientRows
+    .filter((row) => !row.ingredient)
+    .map((row) => row.normalizedInput);
 
-  if (matchedIngredients.length >= 1) {
-    suitabilityScore -= 2;
-  }
+  const safety = calculateSafetyScore(ingredientRows);
+  const suitability = calculateSuitabilityScore({
+    ingredientRows,
+    profile: normalizedProfile
+  });
+  const confidence = calculateConfidenceScore({
+    sourceMeta: {
+      sourceWebsite: verifiedCandidate.sourceWebsite || matchedProduct?.brand || "Manual Input",
+      extractionMethod: verifiedCandidate.extractionMethod || (matchedProduct ? "catalog-verified" : "manual-input"),
+      brand: matchedProduct?.brand || verifiedCandidate.sourceWebsite || ""
+    },
+    ingredientRows
+  });
 
-  const alternatives = productCatalog
-    .filter((product) => product.name !== matchedProduct?.name)
-    .slice(0, 3)
-    .map((product) => ({
-      id: product.id,
-      name: product.name,
-      brand: product.brand,
-      category: product.category
-    }));
+  const ingredientBreakdown = ingredientRows.map((row) => ({
+    name: row.displayName,
+    estimatedRange: row.estimatedRange,
+    purpose: row.purpose,
+    riskLevel: row.riskLevel,
+    suitability:
+      row.ingredient?.avoidSkinTypes?.includes(normalizedProfile.skinType)
+        ? "Low Match"
+        : row.ingredient?.suitableSkinTypes?.includes(normalizedProfile.skinType)
+          ? "Good Match"
+          : "Neutral",
+    explanation: row.ingredient?.simpleExplanation || "Ingredient role not mapped yet"
+  }));
+
+  const verdict = buildVerdict({
+    safetyScore: safety.safetyScore,
+    suitabilityScore: suitability.suitabilityScore
+  });
 
   return {
+    status: "VERIFIED_INGREDIENTS_FOUND",
+    verifiedIngredients: true,
     product: matchedProduct || null,
     productName: matchedProduct?.name || productName || "Custom Ingredient List",
+    matchedIngredients,
     analyzedIngredients: matchedIngredients,
     unknownIngredients,
-    safetyScore: clamp(safetyScore, 96),
-    suitabilityScore: clamp(suitabilityScore, 94),
-    verdict: buildVerdict(safetyScore, suitabilityScore),
-    pros: [...new Set(pros)].slice(0, 3),
-    cons: [...new Set(cons)].slice(0, 5),
-    alternatives
+    ingredientBreakdown,
+    ingredientEstimateDisclaimer: "Estimated from ingredient order-not actual concentration.",
+    safetyScore: safety.safetyScore,
+    suitabilityScore: suitability.suitabilityScore,
+    confidenceScore: confidence.confidenceScore,
+    confidenceDetails: confidence.confidenceDetails,
+    verdict,
+    pros: suitability.positives,
+    cons: [...safety.safetyNotes, ...suitability.negatives].slice(0, 5),
+    alternatives: buildAlternatives(matchedProduct),
+    message: "Verified ingredients analyzed successfully."
   };
 }
-
