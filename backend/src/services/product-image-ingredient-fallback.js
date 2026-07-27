@@ -494,6 +494,24 @@ function buildZeroImageReason({ pageDebug = {}, rawImageCount = 0, galleryDebug 
   return `Found ${rawImageCount} raw image reference${rawImageCount === 1 ? "" : "s"}, but all were rejected as duplicate, non-product, unsupported, blocked, or too small after normalization. Source counts: ${JSON.stringify(sourceCounts)}.`;
 }
 
+function isPlaywrightBrowserMissingError(error) {
+  const message = `${error?.message || ""}\n${error?.stack || ""}`;
+  return /Executable doesn'?t exist|playwright was just installed|npx playwright install|playwright install/i.test(message);
+}
+
+function formatImageCollectionError(error) {
+  const message = String(error?.message || "").replace(/\s+/g, " ").trim();
+
+  if (isPlaywrightBrowserMissingError(error)) {
+    return "Playwright Chromium is not installed on this server. Redeploy the backend after the postinstall browser download runs, or set the Render build command to `npm install && npx playwright install chromium`.";
+  }
+
+  if (/ERR_NETWORK_ACCESS_DENIED/i.test(message)) {
+    return "The server browser could not access this product URL because the network request was denied. Amazon may block hosted browser requests, so try the official brand product page or paste/upload the ingredient label.";
+  }
+
+  return `Image collection failed before OCR could run: ${message}`;
+}
 export async function collectProductImageUrlsWithPlaywright({ inputUrl, timeoutMs = 12000, signal } = {}) {
   let browser = null;
   let page = null;
@@ -642,7 +660,7 @@ export async function collectProductImageUrlsWithPlaywright({ inputUrl, timeoutM
     }
     collectionDebug.zeroImageReason = collectionDebug.captchaOrAntiBotDetected
       ? `Playwright reached ${collectionDebug.currentUrl || "the page"}, but the page appears blocked by CAPTCHA or anti-bot protection.`
-      : `Image collection failed before OCR could run: ${error.message}`;
+      : formatImageCollectionError(error);
     collectionDebug.totalDurationMs = Date.now() - startedAt;
 
     logUrlAnalysis("product-image-collection-failed", {
@@ -663,7 +681,9 @@ export async function collectProductImageUrlsWithPlaywright({ inputUrl, timeoutM
       // Ignore cleanup failure.
     }
   }
-}async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
