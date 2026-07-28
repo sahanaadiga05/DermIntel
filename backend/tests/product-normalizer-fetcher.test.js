@@ -4,7 +4,7 @@ import { fetchPageWithStrategies, shouldAttemptDynamicFallbackAfterStaticFailure
 import { createProductFingerprint } from "../src/lib/knowledge-base/product-fingerprint.js";
 import { buildProductSearchPhrases } from "../src/lib/url-analysis/search-utils.js";
 import { extractProductSku, normalizeProductName } from "../src/lib/product-normalizer.js";
-import { hasIngredientUsefulMetadataCache, shouldRetryWithDynamicFetch } from "../src/services/product-resolver.js";
+import { deriveFallbackNameFromUrl, hasIngredientUsefulMetadataCache, shouldRetryWithDynamicFetch } from "../src/services/product-resolver.js";
 
 test("normalizeProductName removes common ecommerce marketing phrases", () => {
   const normalized = normalizeProductName("Cetaphil Gentle Skin Cleanser | Buy Now | Free Shipping | 125ml");
@@ -143,4 +143,12 @@ test("shouldAttemptDynamicFallbackAfterStaticFailure returns false for non-retry
   });
 
   assert.equal(shouldRetry, false);
+});
+
+test("Nykaa product slug is used when numeric product id is the last path segment", () => {
+  const fallbackName = deriveFallbackNameFromUrl("https://www.nykaa.com/chemist-at-play-salicylic-acid-oil-acne-control-face-wash-for-oily-acne-prone-skin/p/12020770?skuId=12020770");
+
+  assert.match(fallbackName, /Chemist At Play/i);
+  assert.match(fallbackName, /Face Wash/i);
+  assert.doesNotMatch(fallbackName, /^12020770$/);
 });

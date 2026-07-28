@@ -6,6 +6,77 @@ import { enrichProductIdentity } from "../lib/url-analysis/search-utils.js";
 import { detectBrand, detectCategory, normalizeProductName, slugToTitle } from "../lib/product-normalizer.js";
 import { logUrlAnalysis } from "../lib/url-analysis/logger.js";
 
+
+const NON_PRODUCT_PATH_SEGMENTS = new Set([
+  "p",
+  "dp",
+  "gp",
+  "ip",
+  "product",
+  "products",
+  "shop",
+  "buy",
+  "item",
+  "catalog",
+  "collection",
+  "collections",
+  "search"
+]);
+
+function decodePathSegment(segment = "") {
+  try {
+    return decodeURIComponent(segment);
+  } catch (_error) {
+    return segment;
+  }
+}
+
+function humanizeProductSegment(segment = "") {
+  return slugToTitle(
+    decodePathSegment(segment)
+      .replace(/\bpercentage\b/gi, "%")
+      .replace(/\bpct\b/gi, "%")
+      .replace(/\bpercent\b/gi, "%")
+  );
+}
+
+function scoreProductPathSegment(segment = "") {
+  const decoded = decodePathSegment(segment).trim();
+  const normalized = decoded.toLowerCase();
+  const title = humanizeProductSegment(decoded);
+
+  if (!decoded || NON_PRODUCT_PATH_SEGMENTS.has(normalized)) return -1000;
+  if (/^\d+$/.test(decoded)) return -900;
+  if (/^[a-z0-9]{8,14}$/i.test(decoded) && /\d/.test(decoded) && !decoded.includes("-")) return -750;
+
+  let score = Math.min(title.length, 120);
+  if (detectBrand(title)) score += 45;
+  if (detectCategory(title) !== "Product") score += 35;
+  if (/ingredient|face|wash|cleanser|serum|cream|moisturi[sz]er|sunscreen|shampoo|conditioner|lotion|body/i.test(title)) score += 25;
+  if (/\b(?:utm|campaign|google|ads|banner|invite)\b/i.test(title)) score -= 80;
+
+  return score;
+}
+
+export function deriveFallbackNameFromUrl(parsedUrlOrValue) {
+  let parsedUrl;
+  try {
+    parsedUrl = parsedUrlOrValue instanceof URL ? parsedUrlOrValue : new URL(String(parsedUrlOrValue || ""));
+  } catch (_error) {
+    return "Linked Product";
+  }
+
+  const segments = parsedUrl.pathname.split("/").filter(Boolean);
+  const bestSegment = segments
+    .map((segment) => ({ segment, score: scoreProductPathSegment(segment) }))
+    .sort((left, right) => right.score - left.score)[0];
+
+  if (!bestSegment || bestSegment.score < 0) {
+    return "Linked Product";
+  }
+
+  return normalizeProductName(humanizeProductSegment(bestSegment.segment));
+}
 function createStep(label, state, details = "") {
   return { label, state, details };
 }
@@ -113,7 +184,7 @@ export async function resolveProductMetadata(inputUrl, context = {}) {
   }
 
   const metadataCache = await getCachedProductMetadata(inputUrl);
-  const fallbackName = slugToTitle(website.parsedUrl.pathname.split("/").filter(Boolean).pop() || "");
+  const fallbackName = deriveFallbackNameFromUrl(website.parsedUrl);
 
   if (canReextractFromCachedHtml(metadataCache)) {
     const resolved = await extractResolvedProductData({
@@ -249,7 +320,7 @@ export async function resolveProductMetadata(inputUrl, context = {}) {
     processingTrace[processingTrace.length - 1] = createStep(
       "Parsing retailer page",
       "failed",
-      fetched.errorMessage || "Unable to fetch the retailer page."
+      `${fetched.errorMessage || "Unable to fetch the retailer page."} Recovered product metadata from the URL slug. ${formatProductSummary(product)}`
     );
   }
 

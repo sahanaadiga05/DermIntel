@@ -661,6 +661,10 @@ function formatImageCollectionError(error) {
     return "Playwright Chromium is not installed on this server. Redeploy the backend after the postinstall browser download runs, or set the Render build command to `npm install && npx playwright install chromium`.";
   }
 
+  if (/ERR_HTTP2_PROTOCOL_ERROR|HTTP2_PROTOCOL_ERROR/i.test(message)) {
+    return "The server browser could not open this product page because the website/CDN rejected the HTTP/2 browser navigation. Try a cleaner official brand link, or paste/upload the ingredient label.";
+  }
+
   if (/ERR_NETWORK_ACCESS_DENIED/i.test(message)) {
     return "The server browser could not access this product URL because the network request was denied. Amazon may block hosted browser requests, so try the official brand product page or paste/upload the ingredient label.";
   }
