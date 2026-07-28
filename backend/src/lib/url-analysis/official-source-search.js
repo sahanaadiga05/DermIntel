@@ -6,13 +6,6 @@ import { matchProducts } from "./product-matcher.js";
 import { resolveOfficialBrand } from "../../services/official-brand-resolver.js";
 import { normalizeProductName, slugToTitle } from "../product-normalizer.js";
 
-function slugify(value = "") {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
 function safeUrl(value = "", baseUrl = "") {
   try {
     return new URL(String(value || "").trim(), baseUrl).toString();
@@ -29,16 +22,6 @@ function sameHostname(url = "", domain = "") {
   } catch (_error) {
     return false;
   }
-}
-
-function buildSeedUrls(domain, productInfo) {
-  const nameSlug = slugify([productInfo.name, productInfo.variant].filter(Boolean).join(" "));
-  const baseSlug = slugify(productInfo.name || productInfo.canonicalName || "");
-
-  return [
-    `https://${domain}/products/${nameSlug}`,
-    `https://${domain}/products/${baseSlug}`
-  ].filter(Boolean);
 }
 
 function buildOfficialSearchUrls(domain, productInfo = {}) {
@@ -152,7 +135,10 @@ async function searchOfficialSiteInternally(domain, productInfo, options = {}) {
 
 export async function searchOfficialWebsiteForIngredients(productInfo, options = {}) {
   const brandResolution = await resolveOfficialBrand(productInfo, {
-    traceId: options.traceId
+    traceId: options.traceId,
+    signal: options.signal,
+    searchTimeoutMs: options.searchTimeoutMs || 5000,
+    fetchTimeoutMs: options.fetchTimeoutMs || 5000
   });
   const domains = brandResolution.officialDomain ? [brandResolution.officialDomain] : [];
   const report = {
@@ -172,8 +158,8 @@ export async function searchOfficialWebsiteForIngredients(productInfo, options =
 
   if (!domains.length) {
     report.lastReason = brandResolution.resolutionMethod === "not-found"
-      ? "Brand Registry: No entry. Official domain: Not found. Skipping official website search."
-      : "Brand Registry: No entry. Official domain could not be verified. Skipping official website search.";
+      ? "Official website discovery did not find a verified brand domain."
+      : "Official website discovery could not verify a brand-owned domain.";
     return { candidates: [], attempts: [], report };
   }
 
@@ -207,8 +193,7 @@ export async function searchOfficialWebsiteForIngredients(productInfo, options =
 
     const rankedUrls = [
       ...internalSearchResults,
-      ...rankedSearchUrls,
-      ...buildSeedUrls(domain, productInfo).map((url) => scoreOfficialLink(productInfo, { url, text: productInfo.name || "", discoveredFrom: "slug-seed" }))
+      ...rankedSearchUrls
     ]
       .sort((left, right) => right.score - left.score);
 

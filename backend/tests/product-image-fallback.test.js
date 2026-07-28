@@ -54,13 +54,13 @@ test("generic image normalization extracts JSON-encoded gallery image attributes
   const images = normalizeAndSelectImages(
     [
       {
-        url: '{"https://m.media-amazon.com/images/I/front-pack._SX38_SY50_.jpg":[38,50],"https://m.media-amazon.com/images/I/back-ingredients-label._SX38_SY50_.jpg":[38,50]}',
+        url: '{"https://cdn.example.com/images/I/front-pack._SX38_SY50_.jpg":[38,50],"https://cdn.example.com/images/I/back-ingredients-label._SX38_SY50_.jpg":[38,50]}',
         source: "rendered-dom",
         sourceDetail: "data-a-dynamic-image",
-        alt: "Amazon dynamic gallery images"
+        alt: "JSON dynamic gallery images"
       }
     ],
-    "https://www.amazon.in/example-product/dp/B000000"
+    "https://market.example.com/example-product/p/B000000"
   );
 
   assert.ok(images.length >= 2);

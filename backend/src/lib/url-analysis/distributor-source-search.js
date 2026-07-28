@@ -1,20 +1,75 @@
-import { buildSourceScopedQueries, inspectCandidatePages, searchDomainResults } from "./search-utils.js";
+import { buildSourceScopedQueries, inspectCandidatePages, searchGeneralResults } from "./search-utils.js";
+import { matchProducts } from "./product-matcher.js";
+import { slugToTitle } from "../product-normalizer.js";
 
-const DISTRIBUTOR_SOURCES = [
-  { label: "Apollo Pharmacy", domain: "apollopharmacy.in" },
-  { label: "Netmeds", domain: "netmeds.com" },
-  { label: "Tata 1mg", domain: "1mg.com" },
-  { label: "PharmEasy", domain: "pharmeasy.in" },
-  { label: "Wellness Forever", domain: "wellnessforever.com" },
-  { label: "Nykaa", domain: "nykaa.com" },
-  { label: "Tira", domain: "tirabeauty.com" },
-  { label: "Purplle", domain: "purplle.com" },
-  { label: "Myntra", domain: "myntra.com" },
-  { label: "Flipkart", domain: "flipkart.com" },
-  { label: "Amazon India", domain: "amazon.in" },
-  { label: "Health and Glow", domain: "healthandglow.com" },
-  { label: "BigBasket", domain: "bigbasket.com" }
+const NON_RETAIL_RESULT_PATTERNS = [
+  "reddit.",
+  "youtube.",
+  "instagram.",
+  "facebook.",
+  "pinterest.",
+  "tiktok.",
+  "medium.",
+  "wordpress.",
+  "blogspot."
 ];
+
+function allowDistributorResult(url = "") {
+  const normalized = String(url || "").toLowerCase();
+  return !NON_RETAIL_RESULT_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
+
+function getHostname(url = "") {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch (_error) {
+    return "Unknown Source";
+  }
+}
+
+function urlToCandidateTitle(url = "") {
+  try {
+    const parsed = new URL(url);
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    return slugToTitle(segments.at(-1) || segments.at(-2) || parsed.hostname);
+  } catch (_error) {
+    return "Distributor Result";
+  }
+}
+
+function buildDistributorQueries(productInfo = {}) {
+  return buildSourceScopedQueries(productInfo, {
+    sourceLabel: "retailer distributor pharmacy product page ingredients"
+  });
+}
+
+function rankDistributorHits(productInfo = {}, hits = []) {
+  return hits
+    .map((hit) => {
+      const hostname = getHostname(hit.url);
+      const productMatch = matchProducts(productInfo, {
+        name: urlToCandidateTitle(hit.url),
+        brand: productInfo.brand,
+        category: productInfo.category,
+        description: `${hit.query || ""} ${hit.url}`,
+        url: hit.url
+      });
+      let score = productMatch.finalScore;
+      if (/ingredient|inci|composition|product|pdp|item|buy|shop/i.test(`${hit.query || ""} ${hit.url}`)) score += 14;
+      if (/search|collection|collections|catalog|tagged|category/i.test(hit.url)) score -= 14;
+
+      return {
+        ...hit,
+        source: {
+          label: hostname,
+          domain: hostname
+        },
+        rankScore: Math.max(0, score),
+        productMatch
+      };
+    })
+    .sort((left, right) => right.rankScore - left.rankScore);
+}
 
 export async function searchDistributorPagesForIngredients(productInfo, options = {}) {
   const candidates = [];
@@ -24,56 +79,34 @@ export async function searchDistributorPagesForIngredients(productInfo, options 
     matchedPages: 0,
     ingredientHits: 0,
     verifiedCandidates: 0,
-    sourcesSearched: DISTRIBUTOR_SOURCES.map((source) => source.label),
+    sourcesSearched: ["generic-web-distributor-search"],
     candidateUrls: [],
     lastReason: "No distributor page matched yet."
   };
 
-  const searchHits = await Promise.allSettled(
-    DISTRIBUTOR_SOURCES.map(async (source) => ({
-      source,
-      urls: await searchDomainResults(buildSourceScopedQueries(productInfo, {
-        sourceLabel: source.label
-      }), [source.domain], {
-        limitPerDomain: 3,
-        signal: options.signal,
-        timeoutMs: options.searchTimeoutMs || 5000,
-        queryLimit: 2
-      })
-    }))
-  );
+  const searchHits = await searchGeneralResults(buildDistributorQueries(productInfo), {
+    limit: 14,
+    allowUrl: allowDistributorResult,
+    signal: options.signal,
+    timeoutMs: options.searchTimeoutMs || 5000,
+    queryLimit: 4
+  });
 
-  const inspectionJobs = [];
-  for (const hit of searchHits) {
-    if (hit.status !== "fulfilled") {
-      continue;
-    }
+  const rankedHits = rankDistributorHits(productInfo, searchHits).slice(0, 10);
 
-    for (const result of hit.value.urls) {
-      inspectionJobs.push({ source: hit.value.source, url: result.url, query: result.query });
-    }
-  }
-
-  const uniqueJobs = [];
-  const seenUrls = new Set();
-  for (const job of inspectionJobs) {
-    if (seenUrls.has(job.url)) continue;
-    seenUrls.add(job.url);
-    uniqueJobs.push(job);
-  }
-
-  report.candidateUrls = uniqueJobs.slice(0, 12).map((job) => ({
-    source: job.source.label,
-    url: job.url,
-    query: job.query
+  report.candidateUrls = rankedHits.map((hit) => ({
+    source: hit.source.label,
+    url: hit.url,
+    query: hit.query,
+    score: Math.round(hit.rankScore)
   }));
 
   const inspections = await inspectCandidatePages(
-    uniqueJobs.slice(0, 12).map(({ source, url }) => ({
+    rankedHits.map(({ source, url }) => ({
       url,
       productInfo,
       sourceWebsite: source.label,
-      extractionMethod: `distributor:${source.label}`,
+      extractionMethod: "distributor:generic-search",
       ingredientSource: source.label,
       minIngredientCount: 8,
       staticTimeoutMs: options.fetchTimeoutMs || 5000,
@@ -114,7 +147,7 @@ export async function searchDistributorPagesForIngredients(productInfo, options 
   }
 
   if (!candidates.length && report.candidateUrls.length) {
-    report.lastReason = `Checked ${report.inspectedPages} distributor/retailer candidate page${report.inspectedPages === 1 ? "" : "s"}; no verified ingredient list was found.`;
+    report.lastReason = `Checked ${report.inspectedPages} generic distributor/retailer candidate page${report.inspectedPages === 1 ? "" : "s"}; no verified ingredient list was found.`;
   }
 
   return { candidates, attempts, report };

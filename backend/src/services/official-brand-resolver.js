@@ -1,41 +1,46 @@
 import { getCachedBrandResolution, setCachedBrandResolution } from "../lib/cache-manager.js";
 import { fetchStaticHtml } from "../lib/url-analysis/page-fetcher.js";
-import { lookupBrandRegistry, normalizeBrandRegistryKey } from "../lib/url-analysis/brand-registry.js";
 import { logUrlAnalysis } from "../lib/url-analysis/logger.js";
 import { searchGeneralResults } from "../lib/url-analysis/search-utils.js";
 
-const BLOCKED_HOST_KEYWORDS = [
-  "amazon.",
-  "flipkart.",
-  "nykaa.",
-  "myntra.",
-  "purplle.",
-  "tira.",
-  "apollopharmacy",
-  "netmeds",
-  "1mg.",
-  "pharmeasy",
-  "incidecoder",
-  "cosdna",
-  "skinsort",
-  "beautypedia",
-  "ewg.",
+const NON_OFFICIAL_HOST_PATTERNS = [
+  "google.",
+  "bing.",
+  "duckduckgo.",
+  "yahoo.",
+  "yandex.",
   "reddit.",
   "youtube.",
   "instagram.",
   "facebook.",
-  "blog",
-  "wordpress"
+  "pinterest.",
+  "tiktok.",
+  "linkedin.",
+  "medium.",
+  "wordpress.",
+  "blogspot."
 ];
+
+function normalizeBrandKey(value = "") {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function compact(value = "") {
+  return normalizeBrandKey(value).replace(/\s+/g, "");
+}
 
 function buildSearchQueries(productInfo = {}) {
   const brand = productInfo.brand || "";
-  const productName = productInfo.name || "";
+  const productName = productInfo.canonicalName || productInfo.name || "";
   const variant = productInfo.variant || "";
 
   return [
     `${brand} official website`.trim(),
-    `${brand} ${productName}`.trim(),
+    `${brand} ${productName} official`.trim(),
     `${brand} ${productName} ingredients`.trim(),
     `${brand} ${productName} ${variant}`.trim()
   ].filter(Boolean);
@@ -43,37 +48,69 @@ function buildSearchQueries(productInfo = {}) {
 
 function isAllowedOfficialDomain(hostname = "") {
   const host = hostname.toLowerCase();
-  return host && !BLOCKED_HOST_KEYWORDS.some((keyword) => host.includes(keyword));
+  return host && !NON_OFFICIAL_HOST_PATTERNS.some((pattern) => host.includes(pattern));
+}
+
+function hostnameBrandScore(hostname = "", brand = "") {
+  const compactHost = compact(hostname.replace(/^www\./, "").split(".").slice(0, -1).join(" "));
+  const compactBrand = compact(brand);
+  if (!compactHost || !compactBrand) return 0;
+  if (compactHost === compactBrand) return 1;
+  if (compactHost.includes(compactBrand) || compactBrand.includes(compactHost)) return 0.82;
+
+  const brandTokens = normalizeBrandKey(brand).split(" ").filter(Boolean);
+  const matched = brandTokens.filter((token) => compactHost.includes(token)).length;
+  return brandTokens.length ? matched / brandTokens.length : 0;
 }
 
 function brandMentioned(text = "", brand = "") {
-  const normalizedText = text.toLowerCase();
-  const normalizedBrand = normalizeBrandRegistryKey(brand).replace(/\s+/g, " ");
-  return normalizedBrand && normalizedText.includes(normalizedBrand);
+  const normalizedText = normalizeBrandKey(text);
+  const normalizedBrand = normalizeBrandKey(brand);
+  if (!normalizedBrand) return false;
+
+  if (normalizedText.includes(normalizedBrand)) return true;
+
+  const tokens = normalizedBrand.split(" ").filter((token) => token.length > 2);
+  return tokens.length > 0 && tokens.every((token) => normalizedText.includes(token));
 }
 
-async function validateOfficialDomain(candidateUrl, productInfo, fetchFn = fetchStaticHtml) {
+function extractCanonicalHost(response, candidateUrl) {
   try {
-    const response = await fetchFn(candidateUrl, { timeoutMs: 12000, retries: 1 });
+    return new URL(response.finalUrl || candidateUrl).hostname.replace(/^www\./, "").toLowerCase();
+  } catch (_error) {
+    return "";
+  }
+}
+
+async function validateOfficialDomain(candidateUrl, productInfo, fetchFn = fetchStaticHtml, options = {}) {
+  try {
+    const response = await fetchFn(candidateUrl, { timeoutMs: options.timeoutMs || 5000, retries: 1, signal: options.signal });
     if (!response.ok) {
       return null;
     }
 
-    const hostname = new URL(response.finalUrl || candidateUrl).hostname.replace(/^www\./, "").toLowerCase();
+    const hostname = extractCanonicalHost(response, candidateUrl);
     if (!isAllowedOfficialDomain(hostname)) {
       return null;
     }
 
     const html = response.html || "";
-    const documentText = html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const documentText = html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
 
-    if (!brandMentioned(documentText, productInfo.brand)) {
+    const hostScore = hostnameBrandScore(hostname, productInfo.brand);
+    const textMentionsBrand = brandMentioned(documentText, productInfo.brand);
+    if (hostScore < 0.45 && !textMentionsBrand) {
       return null;
     }
 
     return {
       officialDomain: hostname,
-      confidence: 0.72,
+      confidence: Math.max(0.68, Math.min(0.96, hostScore || (textMentionsBrand ? 0.72 : 0))),
       resolutionMethod: "search-validation"
     };
   } catch (_error) {
@@ -82,7 +119,7 @@ async function validateOfficialDomain(candidateUrl, productInfo, fetchFn = fetch
 }
 
 export async function resolveOfficialBrand(productInfo = {}, options = {}) {
-  const normalizedBrand = normalizeBrandRegistryKey(productInfo.brand || "");
+  const normalizedBrand = normalizeBrandKey(productInfo.brand || "");
   const traceId = options.traceId;
   const searchFn = options.searchFn || searchGeneralResults;
   const fetchFn = options.fetchFn || fetchStaticHtml;
@@ -100,20 +137,12 @@ export async function resolveOfficialBrand(productInfo = {}, options = {}) {
     return cached;
   }
 
-  const registryMatch = lookupBrandRegistry(productInfo.brand || "");
-  if (registryMatch) {
-    await setCachedBrandResolution(normalizedBrand, registryMatch);
-    logUrlAnalysis("official-brand-registry-hit", {
-      traceId,
-      brand: productInfo.brand,
-      officialDomain: registryMatch.officialDomain
-    });
-    return registryMatch;
-  }
-
   const searchQueries = buildSearchQueries(productInfo);
   const searchResults = await searchFn(searchQueries, {
-    limit: 6,
+    limit: 8,
+    signal: options.signal,
+    timeoutMs: options.searchTimeoutMs || 5000,
+    queryLimit: 4,
     allowUrl: (url) => {
       try {
         const hostname = new URL(url).hostname.replace(/^www\./, "");
@@ -125,14 +154,18 @@ export async function resolveOfficialBrand(productInfo = {}, options = {}) {
   });
 
   for (const result of searchResults) {
-    const validated = await validateOfficialDomain(result.url, productInfo, fetchFn);
+    const validated = await validateOfficialDomain(result.url, productInfo, fetchFn, {
+      timeoutMs: options.fetchTimeoutMs || 5000,
+      signal: options.signal
+    });
     if (validated?.officialDomain) {
       await setCachedBrandResolution(normalizedBrand, validated);
       logUrlAnalysis("official-brand-search-hit", {
         traceId,
         brand: productInfo.brand,
         officialDomain: validated.officialDomain,
-        searchUrl: result.url
+        searchUrl: result.url,
+        confidence: validated.confidence
       });
       return validated;
     }
@@ -140,7 +173,8 @@ export async function resolveOfficialBrand(productInfo = {}, options = {}) {
 
   logUrlAnalysis("official-brand-search-miss", {
     traceId,
-    brand: productInfo.brand
+    brand: productInfo.brand,
+    candidatesChecked: searchResults.length
   });
 
   return {
@@ -149,3 +183,9 @@ export async function resolveOfficialBrand(productInfo = {}, options = {}) {
     resolutionMethod: searchResults.length ? "search-unverified" : "not-found"
   };
 }
+
+export const __testables = {
+  normalizeBrandKey,
+  hostnameBrandScore,
+  brandMentioned
+};

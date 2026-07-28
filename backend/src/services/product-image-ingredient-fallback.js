@@ -189,10 +189,10 @@ function createHighResolutionVariants(url = "") {
     // Ignore malformed variants.
   }
 
-  const amazonCleaned = url
+  const dimensionMarkerCleaned = url
     .replace(/\._[A-Z0-9_,.-]*(?:SX|SY|UX|UY|UL|SL|AC|SR|QL)[A-Z0-9_,.-]*_\./gi, ".")
     .replace(/\._[A-Z0-9_,.-]{8,}_\./gi, ".");
-  if (amazonCleaned !== url) variants.add(amazonCleaned);
+  if (dimensionMarkerCleaned !== url) variants.add(dimensionMarkerCleaned);
 
   return [...variants];
 }
@@ -666,7 +666,7 @@ function formatImageCollectionError(error) {
   }
 
   if (/ERR_NETWORK_ACCESS_DENIED/i.test(message)) {
-    return "The server browser could not access this product URL because the network request was denied. Amazon may block hosted browser requests, so try the official brand product page or paste/upload the ingredient label.";
+    return "The server browser could not access this product URL because the network request was denied. Some websites block hosted browser requests, so try a cleaner product page or paste/upload the ingredient label.";
   }
 
   return `Image collection failed before OCR could run: ${message}`;

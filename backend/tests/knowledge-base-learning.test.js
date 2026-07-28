@@ -25,39 +25,39 @@ function stopServer(server) {
 }
 
 test("Product fingerprint stays stable across noisy retailer naming", () => {
-  const amazonLike = createProductFingerprint({
-    brand: "Chemist At Play",
-    name: "Chemist At Play 2% Salicylic Acid Face Wash for Oily & Acne-Prone Skin Controls Oil, Prevents Acne & Fades Acne Marks 100ml",
+  const noisyRetailer = createProductFingerprint({
+    brand: "Example Botanics",
+    name: "Example Botanics 2% Salicylic Acid Face Wash for Oily & Acne-Prone Skin Controls Oil, Prevents Acne & Fades Acne Marks 100ml",
     category: "Face Wash"
   });
 
   const canonical = createProductFingerprint({
-    brand: "Chemist At Play",
+    brand: "Example Botanics",
     name: "Oil & Acne Control Face Wash",
     variant: "2% Salicylic Acid",
     size: "100ml",
     category: "Face Wash"
   });
 
-  assert.equal(amazonLike.brand, canonical.brand);
-  assert.equal(amazonLike.category, canonical.category);
-  assert.equal(amazonLike.size, canonical.size);
-  assert.equal(amazonLike.variant, canonical.variant);
+  assert.equal(noisyRetailer.brand, canonical.brand);
+  assert.equal(noisyRetailer.category, canonical.category);
+  assert.equal(noisyRetailer.size, canonical.size);
+  assert.equal(noisyRetailer.variant, canonical.variant);
 });
 
 test("DermIntel learns a verified formula and reuses it for another URL of the same product", async () => {
   const productServer = await startServer((request, response) => {
     response.writeHead(200, { "Content-Type": "text/html" });
 
-    if (request.url === "/plum-cleanser-retailer-copy") {
+    if (request.url === "/example-cleanser-retailer-copy") {
       response.end(`
         <html>
           <head>
-            <title>Plum Oat & Ceramide Gentle Face Wash for Sensitive Skin</title>
-            <meta property="og:title" content="Plum Oat & Ceramide Gentle Face Wash for Sensitive Skin" />
+            <title>Example Botanics Oat & Ceramide Gentle Face Wash for Sensitive Skin</title>
+            <meta property="og:title" content="Example Botanics Oat & Ceramide Gentle Face Wash for Sensitive Skin" />
           </head>
           <body>
-            <p>Plum Oat & Ceramide Gentle Face Wash for sensitive skin with a soft daily cleanse.</p>
+            <p>Example Botanics Oat & Ceramide Gentle Face Wash for sensitive skin with a soft daily cleanse.</p>
           </body>
         </html>
       `);
@@ -67,8 +67,8 @@ test("DermIntel learns a verified formula and reuses it for another URL of the s
     response.end(`
       <html>
         <head>
-          <title>Plum Oat & Ceramide Gentle Face Wash 100ml</title>
-          <meta property="og:title" content="Plum Oat & Ceramide Gentle Face Wash 100ml" />
+          <title>Example Botanics Oat & Ceramide Gentle Face Wash 100ml</title>
+          <meta property="og:title" content="Example Botanics Oat & Ceramide Gentle Face Wash 100ml" />
         </head>
         <body>
           <section>
@@ -92,7 +92,7 @@ test("DermIntel learns a verified formula and reuses it for another URL of the s
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        url: `${productServer.url}/plum-cleanser-source`
+        url: `${productServer.url}/example-cleanser-source`
       })
     });
 
@@ -112,7 +112,7 @@ test("DermIntel learns a verified formula and reuses it for another URL of the s
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        url: `${productServer.url}/plum-cleanser-retailer-copy`
+        url: `${productServer.url}/example-cleanser-retailer-copy`
       })
     });
 

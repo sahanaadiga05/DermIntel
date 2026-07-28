@@ -131,6 +131,71 @@ function extractTitle(html = "", fallback = "") {
   return normalizeProductName(titleMatch?.[1] || fallback);
 }
 
+
+function extractHeadingTitle(html = "") {
+  const h1Match = html.match(/<h1[^>]*>([\s\S]{2,240}?)<\/h1>/i);
+  return normalizeProductName(stripHtml(h1Match?.[1] || ""));
+}
+
+function extractMetaBrand(html = "") {
+  return normalizeWhitespace(
+    extractMetaContent(html, "brand") ||
+    extractMetaContent(html, "product:brand") ||
+    extractMetaContent(html, "og:brand") ||
+    extractMetaContent(html, "twitter:data1") ||
+    ""
+  );
+}
+
+function extractBreadcrumbName(html = "") {
+  const matches = html.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi) || [];
+
+  for (const scriptBlock of matches) {
+    const contentMatch = scriptBlock.match(/<script[^>]*>([\s\S]*?)<\/script>/i);
+    const parsed = safeJsonParse(contentMatch?.[1] || "");
+    const nodes = flattenJsonLd(parsed);
+    const breadcrumb = nodes.find((node) => {
+      const type = Array.isArray(node?.["@type"]) ? node["@type"].join(" ") : node?.["@type"];
+      return typeof type === "string" && /breadcrumb/i.test(type);
+    });
+
+    const items = breadcrumb?.itemListElement || [];
+    const lastItem = Array.isArray(items) ? items.at(-1) : null;
+    const name = lastItem?.name || lastItem?.item?.name || "";
+    if (name) {
+      return normalizeProductName(name);
+    }
+  }
+
+  return "";
+}
+
+function chooseReliableText(candidates = []) {
+  const normalized = candidates
+    .filter((entry) => entry?.value)
+    .map((entry) => ({
+      ...entry,
+      value: normalizeProductName(entry.value)
+    }))
+    .filter((entry) => entry.value);
+
+  if (!normalized.length) return "";
+
+  return normalized
+    .map((entry) => {
+      const agreement = normalized.filter((other) => {
+        if (other === entry) return false;
+        const left = entry.value.toLowerCase();
+        const right = other.value.toLowerCase();
+        return left.includes(right) || right.includes(left);
+      }).length;
+      return {
+        ...entry,
+        score: (entry.weight || 0) + agreement * 12 + Math.min(entry.value.length, 90) / 10
+      };
+    })
+    .sort((left, right) => right.score - left.score)[0].value;
+}
 function extractHtmlImage(html = "") {
   return extractMetaContent(html, "og:image") || extractMetaContent(html, "twitter:image") || "";
 }
@@ -304,8 +369,18 @@ export async function extractProductInfo(html = "", fallbackName = "", siteHints
   });
   const ingredientsFromCandidates = candidates[0]?.rawExtractedIngredients || "";
 
-  const rawName = jsonLd?.name || structured?.name || title || fallbackName;
-  const brand = jsonLd?.brand || structured?.brand || detectBrand(rawName, description, siteHints.brandHint || "");
+  const headingTitle = extractHeadingTitle(html);
+  const breadcrumbName = extractBreadcrumbName(html);
+  const metaBrand = extractMetaBrand(html);
+  const rawName = chooseReliableText([
+    { value: jsonLd?.name, weight: 45 },
+    { value: structured?.name, weight: 42 },
+    { value: headingTitle, weight: 35 },
+    { value: title, weight: 28 },
+    { value: breadcrumbName, weight: 22 },
+    { value: fallbackName, weight: 8 }
+  ]) || fallbackName;
+  const brand = normalizeWhitespace(jsonLd?.brand || structured?.brand || metaBrand || siteHints.brandHint || detectBrand(rawName, title, description));
   const category = detectCategory(rawName, description, siteHints.categoryHint || "");
   const normalizedName = normalizeProductName(rawName);
   const canonicalName = extractCoreProductName(rawName, { brand, category });

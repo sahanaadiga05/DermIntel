@@ -70,6 +70,16 @@ function findProductValues(payload) {
   };
 }
 
+function scoreProductData(productData = {}) {
+  let score = 0;
+  if (productData.name) score += 40;
+  if (productData.brand) score += 28;
+  if (productData.description) score += 16;
+  if (productData.image) score += 8;
+  if (productData.sku) score += 8;
+  return score;
+}
+
 function normalizeJsonBlock(value = "") {
   return cleanText(value)
     .replace(/;\s*$/, "")
@@ -218,6 +228,8 @@ export function extractStructuredIngredientCandidates({ html = "", sourceUrl = "
 }
 
 export function extractStructuredProductData(html = "") {
+  const productBlocks = [];
+
   for (const block of extractNamedScriptBlocks(html)) {
     const payload = safeJsonParse(block.json);
     if (!payload) {
@@ -225,15 +237,36 @@ export function extractStructuredProductData(html = "") {
     }
 
     const productData = findProductValues(payload);
-    if (productData.name || productData.brand || productData.description || productData.image || productData.sku) {
-      return {
+    const score = scoreProductData(productData);
+    if (score > 0) {
+      productBlocks.push({
         ...productData,
-        sourceBlock: block.name
-      };
+        sourceBlock: block.name,
+        reliabilityScore: score + 8
+      });
     }
   }
 
-  return null;
+  for (const scriptBlock of extractJsonScripts(html)) {
+    const contentMatch = scriptBlock.match(/<script[^>]*>([\s\S]*?)<\/script>/i);
+    const payload = safeJsonParse(contentMatch?.[1] || "");
+    if (!payload) {
+      continue;
+    }
+
+    const productData = findProductValues(payload);
+    const score = scoreProductData(productData);
+    if (score > 0) {
+      productBlocks.push({
+        ...productData,
+        sourceBlock: "embedded-json",
+        reliabilityScore: score
+      });
+    }
+  }
+
+  return productBlocks
+    .sort((left, right) => right.reliabilityScore - left.reliabilityScore)[0] || null;
 }
 
 

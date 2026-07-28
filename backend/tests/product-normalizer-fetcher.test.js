@@ -7,8 +7,8 @@ import { detectBrand, extractProductSku, normalizeProductName } from "../src/lib
 import { deriveFallbackNameFromUrl, hasIngredientUsefulMetadataCache, shouldRetryWithDynamicFetch } from "../src/services/product-resolver.js";
 
 test("normalizeProductName removes common ecommerce marketing phrases", () => {
-  const normalized = normalizeProductName("Cetaphil Gentle Skin Cleanser | Buy Now | Free Shipping | 125ml");
-  assert.equal(normalized, "Cetaphil Gentle Skin Cleanser Buy Now Free Shipping");
+  const normalized = normalizeProductName("Example Botanics Gentle Skin Cleanser | Buy Now | Free Shipping | 125ml");
+  assert.equal(normalized, "Example Botanics Gentle Skin Cleanser Buy Now Free Shipping");
 });
 
 test("extractProductSku reads common SKU formats", () => {
@@ -18,14 +18,14 @@ test("extractProductSku reads common SKU formats", () => {
 
 test("buildProductSearchPhrases generates richer query variants", () => {
   const phrases = buildProductSearchPhrases({
-    brand: "Chemist At Play",
+    brand: "Example Botanics",
     name: "Oil & Acne Control Face Wash",
     variant: "2% Salicylic Acid",
     size: "100ml",
     category: "Face Wash"
   });
 
-  assert.ok(phrases.some((phrase) => phrase.includes("Chemist At Play Oil & Acne Control Face Wash ingredients")));
+  assert.ok(phrases.some((phrase) => phrase.includes("Example Botanics Oil & Acne Control Face Wash ingredients")));
   assert.ok(phrases.some((phrase) => phrase.includes("2% Salicylic Acid")));
 });
 
@@ -46,32 +46,32 @@ test("fetchPageWithStrategies surfaces clearer 429 errors after retry attempts",
 });
 
 test("Product fingerprint stays stable across noisy retailer naming", () => {
-  const amazonLike = createProductFingerprint({
-    brand: "Chemist At Play",
-    name: "Chemist At Play 2% Salicylic Acid Face Wash for Oily & Acne-Prone Skin Controls Oil, Prevents Acne & Fades Acne Marks 100ml",
+  const noisyRetailer = createProductFingerprint({
+    brand: "Example Botanics",
+    name: "Example Botanics 2% Salicylic Acid Face Wash for Oily & Acne-Prone Skin Controls Oil, Prevents Acne & Fades Acne Marks 100ml",
     category: "Face Wash"
   });
 
   const canonical = createProductFingerprint({
-    brand: "Chemist At Play",
+    brand: "Example Botanics",
     name: "Oil & Acne Control Face Wash",
     variant: "2% Salicylic Acid",
     size: "100ml",
     category: "Face Wash"
   });
 
-  assert.equal(amazonLike.brand, canonical.brand);
-  assert.equal(amazonLike.category, canonical.category);
-  assert.equal(amazonLike.size, canonical.size);
-  assert.equal(amazonLike.variant, canonical.variant);
+  assert.equal(noisyRetailer.brand, canonical.brand);
+  assert.equal(noisyRetailer.category, canonical.category);
+  assert.equal(noisyRetailer.size, canonical.size);
+  assert.equal(noisyRetailer.variant, canonical.variant);
 });
 
 test("hasIngredientUsefulMetadataCache rejects name-only cache entries", () => {
   const shouldUseCache = hasIngredientUsefulMetadataCache({
     fetched: null,
     product: {
-      brand: "Pilgrim",
-      name: "Korean Rice Water Hydra Glow Moisturizer"
+      brand: "Example Botanics",
+      name: "Barrier Gel Cleanser"
     },
     retailerIngredients: "",
     retailerCandidates: []
@@ -87,8 +87,8 @@ test("hasIngredientUsefulMetadataCache accepts cache with fetched page content",
       html: "<html></html>"
     },
     product: {
-      brand: "Pilgrim",
-      name: "Korean Rice Water Hydra Glow Moisturizer"
+      brand: "Example Botanics",
+      name: "Barrier Gel Cleanser"
     },
     retailerIngredients: "",
     retailerCandidates: []
@@ -145,18 +145,23 @@ test("shouldAttemptDynamicFallbackAfterStaticFailure returns false for non-retry
   assert.equal(shouldRetry, false);
 });
 
-test("Nykaa product slug is used when numeric product id is the last path segment", () => {
-  const fallbackName = deriveFallbackNameFromUrl("https://www.nykaa.com/chemist-at-play-salicylic-acid-oil-acne-control-face-wash-for-oily-acne-prone-skin/p/12020770?skuId=12020770");
+test("Product slug is used when numeric product id is the last path segment", () => {
+  const fallbackName = deriveFallbackNameFromUrl("https://www.marketplace.example/example-botanics-salicylic-acid-oil-acne-control-face-wash-for-oily-acne-prone-skin/p/12020770?skuId=12020770");
 
-  assert.match(fallbackName, /Chemist At Play/i);
+  assert.match(fallbackName, /Example Botanics/i);
   assert.match(fallbackName, /Face Wash/i);
   assert.doesNotMatch(fallbackName, /^12020770$/);
 });
+test("brand detection stops before botanical and active ingredient words", () => {
+  const brand = detectBrand("Example Botanics Oat & Ceramide Gentle Face Wash");
+
+  assert.equal(brand, "Example Botanics");
+});
 test("brand detection prefers product slug brand over retailer hostname", () => {
   const brand = detectBrand(
-    "Chemist At Play Salicylic Acid Oil Acne Control Face Wash For Oily Acne Prone Skin",
-    "www.nykaa.com"
+    "Example Botanics Salicylic Acid Oil Acne Control Face Wash For Oily Acne Prone Skin",
+    "www.marketplace.example"
   );
 
-  assert.equal(brand, "Chemist At Play");
+  assert.equal(brand, "Example Botanics");
 });

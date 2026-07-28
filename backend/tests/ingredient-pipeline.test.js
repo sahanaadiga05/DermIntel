@@ -95,7 +95,7 @@ test("DOM-first extraction finds ingredient section before regex fallback", asyn
 
 test("DOM table extraction converts ingredient tables into full ingredient candidates", async () => {
   const extracted = await extractProductInfo(ingredientTableHtml, "Korean Rice Water Hydra Glow Moisturizer", {
-    sourceUrl: "http://localhost/pilgrim-style-table",
+    sourceUrl: "http://localhost/gallery-style-table",
     sourceWebsite: "Generic Website"
   });
 

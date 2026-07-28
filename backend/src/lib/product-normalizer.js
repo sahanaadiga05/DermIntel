@@ -59,25 +59,79 @@ const CATEGORY_RULES = [
   { category: "Hair Serum", keywords: ["hair serum", "hair oil"] }
 ];
 
-const KNOWN_BRANDS = [
-  "cetaphil",
-  "cerave",
-  "minimalist",
-  "the ordinary",
-  "dot & key",
-  "dot and key",
-  "plum",
-  "nykaa",
-  "loreal",
-  "la roche posay",
-  "pilgrim",
-  "discover pilgrim",
-  "chemist at play",
-  "chemistatplay",
-  "the derma co",
-  "derma co",
-  "dove"
-];
+const BRAND_BOUNDARY_WORDS = new Set([
+  "acne",
+  "acid",
+  "aha",
+  "aloe",
+  "anti",
+  "barrier",
+  "bha",
+  "body",
+  "bright",
+  "brightening",
+  "cleanser",
+  "cleansing",
+  "coconut",
+  "conditioner",
+  "control",
+  "cream",
+  "daily",
+  "dry",
+  "ceramide",
+  "face",
+  "facial",
+  "gel",
+  "gentle",
+  "glow",
+  "glycolic",
+  "hair",
+  "hyaluronic",
+  "hydrating",
+  "hydration",
+  "lactic",
+  "lotion",
+  "moisturizer",
+  "moisturiser",
+  "niacinamide",
+  "night",
+  "oil",
+  "oily",
+  "oat",
+  "peptide",
+  "pha",
+  "retinol",
+  "rice",
+  "salicylic",
+  "serum",
+  "shampoo",
+  "skin",
+  "spf",
+  "sunscreen",
+  "tea",
+  "toner",
+  "vitamin",
+  "wash",
+  "water",
+  "zinc"
+]);
+
+const HOST_BRAND_NOISE_WORDS = new Set([
+  "www",
+  "com",
+  "co",
+  "in",
+  "net",
+  "org",
+  "shop",
+  "store",
+  "beauty",
+  "cosmetic",
+  "cosmetics",
+  "official",
+  "india",
+  "global"
+]);
 
 const STOP_WORDS = new Set([
   "the",
@@ -150,27 +204,125 @@ export function extractProductSku(...candidates) {
   return "";
 }
 
-function formatKnownBrand(brand = "") {
-  return brand
+function formatBrandCandidate(value = "") {
+  return normalizeWhitespace(value)
     .split(" ")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .filter(Boolean)
+    .map((part) => {
+      if (part === "&") return part;
+      const lower = part.toLowerCase();
+      if (["and", "at", "of", "the", "de", "la", "le"].includes(lower)) {
+        return lower.charAt(0).toUpperCase() + lower.slice(1);
+      }
+      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+    })
     .join(" ");
 }
 
-function getBrandsBySpecificity() {
-  return [...KNOWN_BRANDS].sort((left, right) => right.length - left.length);
+function normalizeBrandText(value = "") {
+  return normalizeWhitespace(String(value || ""))
+    .replace(/&/g, " & ")
+    .replace(/[_/.-]+/g, " ")
+    .replace(/[^a-z0-9&%+\s]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripHostNoise(value = "") {
+  const hostish = String(value || "")
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .split(/[/?#]/)[0];
+
+  if (!hostish.includes(".")) {
+    return "";
+  }
+
+  return hostish
+    .replace(/^www\./, "")
+    .split(".")
+    .flatMap((part) => part.split(/[-_]+/))
+    .filter((part) => part && !HOST_BRAND_NOISE_WORDS.has(part))
+    .join(" ");
+}
+
+function extractExplicitBrand(value = "") {
+  const text = normalizeWhitespace(String(value || ""));
+  const patterns = [
+    /\bbrand\s*[:\-]\s*([a-z0-9 &.'-]{2,80})/i,
+    /\bmanufacturer\s*[:\-]\s*([a-z0-9 &.'-]{2,80})/i,
+    /\bby\s+([a-z0-9 &.'-]{2,60})(?:\b(?:face|skin|serum|cream|wash|cleanser|moisturizer|sunscreen|shampoo|conditioner)\b|$)/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) {
+      const brand = normalizeBrandText(match[1]).split(/\b(?:face|skin|serum|cream|wash|cleanser|moisturizer|sunscreen|shampoo|conditioner)\b/i)[0];
+      if (brand && brand.split(" ").length <= 6) {
+        return formatBrandCandidate(brand);
+      }
+    }
+  }
+
+  return "";
+}
+
+function inferBrandFromProductTitle(value = "") {
+  const normalized = normalizeBrandText(value)
+    .replace(/^buy\s+/i, "")
+    .replace(/^shop\s+/i, "")
+    .replace(/^online\s+/i, "");
+
+  if (!normalized || /^linked product$/i.test(normalized)) {
+    return "";
+  }
+
+  const tokens = normalized.split(" ").filter(Boolean);
+  if (!tokens.length) {
+    return "";
+  }
+
+  const collected = [];
+  for (const token of tokens) {
+    const lower = token.toLowerCase();
+    if (/^\d/.test(lower) || BRAND_BOUNDARY_WORDS.has(lower)) {
+      break;
+    }
+
+    collected.push(token);
+    if (collected.length >= 5) {
+      break;
+    }
+  }
+
+  if (!collected.length || collected.length > 4) {
+    return "";
+  }
+
+  const brand = collected.join(" ");
+  if (STOP_WORDS.has(brand.toLowerCase())) {
+    return "";
+  }
+
+  return formatBrandCandidate(brand);
 }
 
 export function detectBrand(...candidates) {
-  const normalizedCandidates = candidates
-    .filter(Boolean)
-    .map((candidate) => candidate.toLowerCase().replace(/[._/-]+/g, " "));
+  for (const candidate of candidates.filter(Boolean)) {
+    const explicit = extractExplicitBrand(candidate);
+    if (explicit) return explicit;
 
-  for (const candidate of normalizedCandidates) {
-    for (const brand of getBrandsBySpecificity()) {
-      if (candidate.includes(brand)) {
-        return formatKnownBrand(brand);
-      }
+    const hostBrand = stripHostNoise(candidate);
+    if (!hostBrand) {
+      const inferred = inferBrandFromProductTitle(candidate);
+      if (inferred) return inferred;
+    }
+  }
+
+  for (const candidate of candidates.filter(Boolean)) {
+    const hostBrand = stripHostNoise(candidate);
+    if (hostBrand) {
+      return formatBrandCandidate(hostBrand);
     }
   }
 

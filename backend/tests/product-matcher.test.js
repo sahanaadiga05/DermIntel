@@ -2,14 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { matchProducts } from "../src/lib/url-analysis/product-matcher.js";
 
-test("Chemist At Play official product matches a verbose retailer title semantically", () => {
+test("Generic official product matches a verbose marketplace title semantically", () => {
   const matched = matchProducts(
     {
-      brand: "Chemist At Play",
-      name: "Chemist At Play 2% Salicylic Acid Face Wash for Oily & Acne-Prone Skin Controls Oil, Prevents Acne & Fades Acne Marks"
+      brand: "Example Botanics",
+      name: "Example Botanics 2% Salicylic Acid Face Wash for Oily & Acne-Prone Skin Controls Oil, Prevents Acne & Fades Acne Marks"
     },
     {
-      brand: "Chemist At Play",
+      brand: "Example Botanics",
       name: "Oil & Acne Control Face Wash",
       description: "2% Salicylic Acid + Niacinamide cleanser for oily, acne-prone skin and post-acne marks."
     }
@@ -26,11 +26,11 @@ test("Chemist At Play official product matches a verbose retailer title semantic
 test("Short official title stays in the review window instead of hard-failing", () => {
   const matched = matchProducts(
     {
-      brand: "Chemist At Play",
-      name: "Chemist At Play 2% Salicylic Acid Face Wash for Oily & Acne-Prone Skin"
+      brand: "Example Botanics",
+      name: "Example Botanics 2% Salicylic Acid Face Wash for Oily & Acne-Prone Skin"
     },
     {
-      brand: "Chemist At Play",
+      brand: "Example Botanics",
       name: "Oil & Acne Control Face Wash"
     }
   );
@@ -41,14 +41,14 @@ test("Short official title stays in the review window instead of hard-failing", 
   assert.ok(matched.finalScore < 85);
 });
 
-test("Minimalist cleanser titles match across cleaner official naming", () => {
+test("Generic cleanser titles match across cleaner official naming", () => {
   const matched = matchProducts(
     {
-      brand: "Minimalist",
-      name: "Minimalist 2% Salicylic Acid Face Cleanser For Oily & Acne Prone Skin"
+      brand: "Clear Formulas",
+      name: "Clear Formulas 2% Salicylic Acid Face Cleanser For Oily & Acne Prone Skin"
     },
     {
-      brand: "Minimalist",
+      brand: "Clear Formulas",
       name: "Salicylic Acid + LHA 2% Cleanser",
       description: "Face wash for oily and acne-prone skin."
     }
@@ -58,14 +58,14 @@ test("Minimalist cleanser titles match across cleaner official naming", () => {
   assert.ok(matched.finalScore >= 85);
 });
 
-test("Cetaphil cleanser matching handles skin-type phrasing differences", () => {
+test("Generic cleanser matching handles skin-type phrasing differences", () => {
   const matched = matchProducts(
     {
-      brand: "Cetaphil",
-      name: "Cetaphil Gentle Skin Cleanser Dry to Normal Sensitive Skin"
+      brand: "Gentle Labs",
+      name: "Gentle Labs Gentle Skin Cleanser Dry to Normal Sensitive Skin"
     },
     {
-      brand: "Cetaphil",
+      brand: "Gentle Labs",
       name: "Gentle Skin Cleanser",
       description: "Hydrating face cleanser for dry to normal, sensitive skin."
     }
@@ -75,14 +75,14 @@ test("Cetaphil cleanser matching handles skin-type phrasing differences", () => 
   assert.ok(matched.finalScore >= 85);
 });
 
-test("CeraVe moisturizer matching preserves barrier-support signals", () => {
+test("Generic moisturizer matching preserves barrier-support signals", () => {
   const matched = matchProducts(
     {
-      brand: "CeraVe",
-      name: "CeraVe Moisturizing Cream For Dry To Very Dry Skin"
+      brand: "Barrier Lab",
+      name: "Barrier Lab Moisturizing Cream For Dry To Very Dry Skin"
     },
     {
-      brand: "CeraVe",
+      brand: "Barrier Lab",
       name: "Moisturizing Cream",
       description: "Ceramide moisturizer with hyaluronic acid for dry to very dry skin."
     }
@@ -92,14 +92,14 @@ test("CeraVe moisturizer matching preserves barrier-support signals", () => {
   assert.ok(matched.finalScore >= 85);
 });
 
-test("The Ordinary serum titles match by brand and active ingredients", () => {
+test("Generic serum titles match by brand and active ingredients", () => {
   const matched = matchProducts(
     {
-      brand: "The Ordinary",
-      name: "The Ordinary Niacinamide 10% + Zinc 1%"
+      brand: "Active Theory",
+      name: "Active Theory Niacinamide 10% + Zinc 1%"
     },
     {
-      brand: "The Ordinary",
+      brand: "Active Theory",
       name: "Niacinamide 10% + Zinc 1%",
       description: "High-strength serum featuring niacinamide and zinc PCA."
     }

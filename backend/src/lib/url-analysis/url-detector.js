@@ -1,11 +1,13 @@
-import { brandWebsiteScraper } from "../../scrapers/brandWebsiteScraper.js";
 import { genericScraper } from "../../scrapers/genericScraper.js";
-import { lookupBrandRegistry, normalizeBrandRegistryKey } from "./brand-registry.js";
 
 const SEARCH_ENGINE_HOSTS = ["google.", "bing.", "search.yahoo.", "duckduckgo.", "yandex."];
 
 function normalizeHost(hostname = "") {
   return hostname.toLowerCase();
+}
+
+function labelFromHostname(hostname = "") {
+  return hostname.replace(/^www\./, "") || "Generic Website";
 }
 
 export function isSearchEngineUrl(parsedUrl) {
@@ -22,30 +24,13 @@ export function isSearchEngineUrl(parsedUrl) {
 export function detectSourceWebsite(inputUrl) {
   const parsedUrl = new URL(inputUrl);
   const hostname = normalizeHost(parsedUrl.hostname);
-  const scraper = brandWebsiteScraper.canHandle(hostname) ? brandWebsiteScraper : genericScraper;
-
-  let websiteType = "ecommerce";
-  if (scraper === brandWebsiteScraper) {
-    websiteType = "official-brand-website";
-  } else if (scraper === genericScraper) {
-    websiteType = "generic-website";
-  }
 
   return {
     hostname,
     websiteKey: hostname.replace(/^www\./, ""),
-    websiteLabel: scraper.platform,
-    websiteType,
-    scraper,
+    websiteLabel: labelFromHostname(hostname),
+    websiteType: "generic-website",
+    scraper: genericScraper,
     parsedUrl
   };
-}
-
-export function getBrandDomains(brand = "") {
-  const resolved = lookupBrandRegistry(brand);
-  return resolved?.officialDomain ? [resolved.officialDomain] : [];
-}
-
-export function getBrandRegistryKey(brand = "") {
-  return normalizeBrandRegistryKey(brand);
 }
