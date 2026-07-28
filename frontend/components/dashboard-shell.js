@@ -985,6 +985,10 @@ function buildUrlResolutionErrorMessage(error) {
     return error.response.data.message;
   }
 
+  if (error.code === "ECONNABORTED") {
+    return "DermIntel took too long to resolve this product URL. Amazon may be blocking the request, or the image/OCR fallback is still running. Try a cleaner product URL or paste/upload the ingredients.";
+  }
+
   if (!error.response) {
     return `DermIntel API is not reachable at ${API_BASE_URL}. Start the backend and try again.`;
   }
