@@ -1,4 +1,4 @@
-﻿import { extractIngredientsWithAi } from "../lib/pipeline/ai-ingredient-extractor.js";
+import { extractIngredientsWithAi } from "../lib/pipeline/ai-ingredient-extractor.js";
 import { createCleanPageText } from "../lib/pipeline/page-text.js";
 import { compareIngredientLists, verifyIngredientCandidate } from "../lib/url-analysis/ingredient-verifier.js";
 import { logUrlAnalysis } from "../lib/url-analysis/logger.js";
@@ -7,6 +7,14 @@ import { searchOfficialWebsiteForIngredients } from "../lib/url-analysis/officia
 import { searchSearchEngineResultsForIngredients } from "../lib/url-analysis/search-engine-source-search.js";
 import { searchTrustedDatabasesForIngredients } from "../lib/url-analysis/trusted-database-search.js";
 import { searchProductImagesForIngredients } from "./product-image-ingredient-fallback.js";
+
+const MAX_RESOLVER_RUNTIME_MS = 68000;
+const STAGE_TIMEOUTS = {
+  initialExtraction: 3000,
+  sourceDiscovery: 18000,
+  broaderSearch: 10000,
+  imageFallback: 22000
+};
 function createStep(label, state, details = "") {
   return { label, state, details };
 }
@@ -167,7 +175,8 @@ function createTaskResult(label, {
   report = {},
   details = "",
   durationMs = 0,
-  cancelled = false
+  cancelled = false,
+  timedOut = false
 } = {}) {
   return {
     label,
@@ -176,7 +185,8 @@ function createTaskResult(label, {
     report,
     details,
     durationMs,
-    cancelled
+    cancelled,
+    timedOut
   };
 }
 
@@ -302,16 +312,18 @@ function createAiTask({ fetched, inputUrl, website, product }) {
   };
 }
 
-async function runParallelStage(taskDefinitions, { parentSignal } = {}) {
+async function runParallelStage(taskDefinitions, { parentSignal, timeoutMs = 0 } = {}) {
   if (!taskDefinitions.length) {
     return {
       winner: null,
       results: [],
-      cancelledLabels: []
+      cancelledLabels: [],
+      timedOut: false
     };
   }
 
   const controller = new AbortController();
+  const stageStartedAt = Date.now();
   const linkParentAbort = () => controller.abort(parentSignal?.reason || createAbortError());
   if (parentSignal) {
     if (parentSignal.aborted) {
@@ -328,6 +340,22 @@ async function runParallelStage(taskDefinitions, { parentSignal } = {}) {
       let settled = 0;
       let resolved = false;
       const results = [];
+      let timeout = null;
+
+      const createTimeoutResults = () => {
+        const reason = `Stage timed out after ${formatDuration(timeoutMs)}. Continuing without this source so the dashboard can respond.`;
+        return taskDefinitions
+          .filter((entry) => !completedLabels.has(entry.label))
+          .map((entry) => createTaskResult(entry.label, {
+            report: {
+              lastReason: reason
+            },
+            details: reason,
+            durationMs: Date.now() - stageStartedAt,
+            cancelled: true,
+            timedOut: true
+          }));
+      };
 
       const finish = (payload) => {
         if (resolved) {
@@ -335,11 +363,28 @@ async function runParallelStage(taskDefinitions, { parentSignal } = {}) {
         }
 
         resolved = true;
+        if (timeout) {
+          clearTimeout(timeout);
+        }
         if (parentSignal) {
           parentSignal.removeEventListener("abort", linkParentAbort);
         }
         resolve(payload);
       };
+
+      if (timeoutMs > 0) {
+        timeout = setTimeout(() => {
+          const timeoutError = createAbortError(`Stage timed out after ${formatDuration(timeoutMs)}`);
+          controller.abort(timeoutError);
+          finish({
+            winner: null,
+            results: [...results, ...createTimeoutResults()],
+            cancelledLabels: [],
+            timedOut: true
+          });
+        }, timeoutMs);
+        timeout.unref?.();
+      }
 
       for (const task of taskDefinitions) {
         Promise.resolve()
@@ -354,7 +399,8 @@ async function runParallelStage(taskDefinitions, { parentSignal } = {}) {
               finish({
                 winner: result,
                 results: [...results],
-                cancelledLabels: taskDefinitions.map((entry) => entry.label).filter((label) => !completedLabels.has(label))
+                cancelledLabels: taskDefinitions.map((entry) => entry.label).filter((label) => !completedLabels.has(label)),
+                timedOut: false
               });
               return;
             }
@@ -363,18 +409,27 @@ async function runParallelStage(taskDefinitions, { parentSignal } = {}) {
               finish({
                 winner: null,
                 results: [...results],
-                cancelledLabels: []
+                cancelledLabels: [],
+                timedOut: false
               });
             }
           })
           .catch((error) => {
             const cancelled = controller.signal.aborted || isAbortError(error);
+            const timedOut = cancelled && /timed out/i.test(String(error?.message || controller.signal.reason?.message || ""));
+            const detail = timedOut
+              ? `Stage timed out after ${formatDuration(timeoutMs)}. Continuing without this source so the dashboard can respond.`
+              : cancelled
+                ? "Cancelled after a verified ingredient list was found elsewhere."
+                : error.message;
             const result = createTaskResult(task.label, {
               report: {
-                lastReason: cancelled ? "Cancelled after a verified ingredient list was found elsewhere." : error.message
+                lastReason: detail
               },
-              details: cancelled ? "Cancelled after a verified ingredient list was found elsewhere." : error.message,
-              cancelled
+              details: detail,
+              durationMs: Date.now() - stageStartedAt,
+              cancelled,
+              timedOut
             });
             results.push(result);
             completedLabels.add(task.label);
@@ -384,7 +439,8 @@ async function runParallelStage(taskDefinitions, { parentSignal } = {}) {
               finish({
                 winner: null,
                 results: [...results],
-                cancelledLabels: []
+                cancelledLabels: [],
+                timedOut
               });
             }
           });
@@ -436,12 +492,20 @@ function isOfficialBrandWebsite(website = {}) {
 }
 
 function logStagePerformance(traceId, taskResult) {
+  const report = taskResult.report || {};
   logUrlAnalysis("ingredient-resolution-stage", {
     traceId,
     stage: taskResult.label,
     durationMs: Math.round(taskResult.durationMs),
     verifiedCandidates: taskResult.candidates.length,
     attempts: taskResult.attempts.length,
+    inspectedPages: report.inspectedPages ?? null,
+    matchedPages: report.matchedPages ?? null,
+    ingredientHits: report.ingredientHits ?? null,
+    candidateUrls: Array.isArray(report.candidateUrls) ? report.candidateUrls.length : null,
+    imageCount: report.imageCount ?? null,
+    ocrAttempts: report.ocrAttempts ?? null,
+    debugImageFolder: report.debugImageFolder || "",
     details: taskResult.details
   });
 }
@@ -584,6 +648,13 @@ function createImageFallbackTasks({ inputUrl, website, product, traceId }) {
     )
   ];
 }
+function getRemainingResolverBudget(startedAt = Date.now()) {
+  return Math.max(1, MAX_RESOLVER_RUNTIME_MS - (Date.now() - startedAt));
+}
+
+function getEffectiveStageTimeout(configuredTimeoutMs, startedAt = Date.now()) {
+  return Math.max(1, Math.min(configuredTimeoutMs, getRemainingResolverBudget(startedAt)));
+}
 function finalizeWinningStage({
   winner,
   processingTrace,
@@ -640,21 +711,35 @@ export async function resolveIngredientsForProduct({ inputUrl, website, fetched,
   const candidateAttempts = [];
   const verifiedCandidates = [];
 
+  const resolverStartedAt = context.startedAt || Date.now();
   const stageGroups = [
-    createStageOneTasks({ retailerCandidates, product }),
-    createStageTwoTasks({ website, product, traceId: traceId || context.traceId })
+    {
+      tasks: createStageOneTasks({ retailerCandidates, product }),
+      timeoutMs: STAGE_TIMEOUTS.initialExtraction
+    },
+    {
+      tasks: createStageTwoTasks({ website, product, traceId: traceId || context.traceId }),
+      timeoutMs: STAGE_TIMEOUTS.sourceDiscovery
+    },
+    {
+      tasks: createStageThreeTasks({ website, product, fetched, inputUrl }),
+      timeoutMs: STAGE_TIMEOUTS.broaderSearch
+    },
+    {
+      tasks: createImageFallbackTasks({ inputUrl, website, product, traceId: traceId || context.traceId }),
+      timeoutMs: STAGE_TIMEOUTS.imageFallback
+    }
   ];
 
-
-  stageGroups.push(createStageThreeTasks({ website, product, fetched, inputUrl }));
-  stageGroups.push(createImageFallbackTasks({ inputUrl, website, product, traceId: traceId || context.traceId }));
-
-  for (const taskGroup of stageGroups) {
+  for (const stageGroup of stageGroups) {
+    const taskGroup = stageGroup.tasks;
     if (!taskGroup.length) {
       continue;
     }
 
-    const stageOutcome = await runParallelStage(taskGroup);
+    const stageOutcome = await runParallelStage(taskGroup, {
+      timeoutMs: getEffectiveStageTimeout(stageGroup.timeoutMs, resolverStartedAt)
+    });
     const orderedResults = taskGroup
       .map(({ label }) => stageOutcome.results.find((result) => result.label === label))
       .filter(Boolean);
@@ -711,11 +796,3 @@ export async function resolveIngredientsForProduct({ inputUrl, website, fetched,
 
   return noIngredients;
 }
-
-
-
-
-
-
-
-

@@ -5,7 +5,13 @@ const TRUSTED_DATABASES = [
   { label: "CosDNA", domain: "cosdna.com" },
   { label: "SkinSort", domain: "skinsort.com" },
   { label: "Beautypedia", domain: "beautypedia.com" },
-  { label: "EWG", domain: "ewg.org" }
+  { label: "EWG", domain: "ewg.org" },
+  { label: "INC Beauty", domain: "incibeauty.com" },
+  { label: "SkinSAFE", domain: "skinsafeproducts.com" },
+  { label: "Paula's Choice", domain: "paulaschoice.com" },
+  { label: "Sephora", domain: "sephora.com" },
+  { label: "Ulta", domain: "ulta.com" },
+  { label: "Lookfantastic", domain: "lookfantastic.com" }
 ];
 
 export async function searchTrustedDatabasesForIngredients(productInfo, options = {}) {
@@ -16,6 +22,8 @@ export async function searchTrustedDatabasesForIngredients(productInfo, options 
     matchedPages: 0,
     ingredientHits: 0,
     verifiedCandidates: 0,
+    sourcesSearched: TRUSTED_DATABASES.map((source) => source.label),
+    candidateUrls: [],
     lastReason: "No trusted database result matched yet."
   };
 
@@ -25,10 +33,10 @@ export async function searchTrustedDatabasesForIngredients(productInfo, options 
       urls: await searchDomainResults(buildSourceScopedQueries(productInfo, {
         sourceLabel: source.label
       }), [source.domain], {
-        limitPerDomain: 2,
+        limitPerDomain: 3,
         signal: options.signal,
         timeoutMs: options.searchTimeoutMs || 5000,
-        queryLimit: 1
+        queryLimit: 2
       })
     }))
   );
@@ -40,12 +48,26 @@ export async function searchTrustedDatabasesForIngredients(productInfo, options 
     }
 
     for (const result of hit.value.urls) {
-      inspectionJobs.push({ source: hit.value.source, url: result.url });
+      inspectionJobs.push({ source: hit.value.source, url: result.url, query: result.query });
     }
   }
 
+  const uniqueJobs = [];
+  const seenUrls = new Set();
+  for (const job of inspectionJobs) {
+    if (seenUrls.has(job.url)) continue;
+    seenUrls.add(job.url);
+    uniqueJobs.push(job);
+  }
+
+  report.candidateUrls = uniqueJobs.slice(0, 12).map((job) => ({
+    source: job.source.label,
+    url: job.url,
+    query: job.query
+  }));
+
   const inspections = await inspectCandidatePages(
-    inspectionJobs.slice(0, 3).map(({ source, url }) => ({
+    uniqueJobs.slice(0, 12).map(({ source, url }) => ({
       url,
       productInfo,
       sourceWebsite: source.label,
@@ -56,7 +78,7 @@ export async function searchTrustedDatabasesForIngredients(productInfo, options 
       dynamicTimeoutMs: options.dynamicTimeoutMs || 8000
     })),
     {
-      concurrency: 2,
+      concurrency: 3,
       stopOnVerified: true,
       signal: options.signal
     }
@@ -87,6 +109,10 @@ export async function searchTrustedDatabasesForIngredients(productInfo, options 
     } else if (candidateReport.reason) {
       report.lastReason = candidateReport.reason;
     }
+  }
+
+  if (!candidates.length && report.candidateUrls.length) {
+    report.lastReason = `Checked ${report.inspectedPages} trusted source candidate page${report.inspectedPages === 1 ? "" : "s"}; no verified ingredient list was found.`;
   }
 
   return { candidates, attempts, report };

@@ -50,6 +50,24 @@ test("generic image normalization keeps opaque CDN product image URLs", () => {
   assert.equal(images[0].source, "network-response");
 });
 
+test("generic image normalization extracts JSON-encoded gallery image attributes", () => {
+  const images = normalizeAndSelectImages(
+    [
+      {
+        url: '{"https://m.media-amazon.com/images/I/front-pack._SX38_SY50_.jpg":[38,50],"https://m.media-amazon.com/images/I/back-ingredients-label._SX38_SY50_.jpg":[38,50]}',
+        source: "rendered-dom",
+        sourceDetail: "data-a-dynamic-image",
+        alt: "Amazon dynamic gallery images"
+      }
+    ],
+    "https://www.amazon.in/example-product/dp/B000000"
+  );
+
+  assert.ok(images.length >= 2);
+  assert.ok(images.some((image) => image.url.includes("front-pack")));
+  assert.ok(images.some((image) => image.url.includes("back-ingredients-label")));
+  assert.ok(images.some((image) => image.url.includes("back-ingredients-label") && image.url.endsWith(".jpg")));
+});
 test("generic image normalization prefers highest resolution variants", () => {
   const images = normalizeAndSelectImages(
     [
@@ -264,4 +282,3 @@ test("AI ingredient support filter keeps OCR spelling corrections and rejects un
 
   assert.deepEqual(filtered, ["Water", "Glycerin", "Niacinamide"]);
 });
-

@@ -986,7 +986,7 @@ function buildUrlResolutionErrorMessage(error) {
   }
 
   if (error.code === "ECONNABORTED") {
-    return "DermIntel took too long to resolve this product URL. Amazon may be blocking the request, or the image/OCR fallback is still running. Try a cleaner product URL or paste/upload the ingredients.";
+    return "DermIntel took too long to resolve this product URL. The website may be blocking automated access, or image/OCR lookup is still running. Try a cleaner product URL, or paste/upload the ingredients.";
   }
 
   if (!error.response) {

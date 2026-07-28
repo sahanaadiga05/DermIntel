@@ -5,7 +5,15 @@ const DISTRIBUTOR_SOURCES = [
   { label: "Netmeds", domain: "netmeds.com" },
   { label: "Tata 1mg", domain: "1mg.com" },
   { label: "PharmEasy", domain: "pharmeasy.in" },
-  { label: "Wellness Forever", domain: "wellnessforever.com" }
+  { label: "Wellness Forever", domain: "wellnessforever.com" },
+  { label: "Nykaa", domain: "nykaa.com" },
+  { label: "Tira", domain: "tirabeauty.com" },
+  { label: "Purplle", domain: "purplle.com" },
+  { label: "Myntra", domain: "myntra.com" },
+  { label: "Flipkart", domain: "flipkart.com" },
+  { label: "Amazon India", domain: "amazon.in" },
+  { label: "Health and Glow", domain: "healthandglow.com" },
+  { label: "BigBasket", domain: "bigbasket.com" }
 ];
 
 export async function searchDistributorPagesForIngredients(productInfo, options = {}) {
@@ -16,6 +24,8 @@ export async function searchDistributorPagesForIngredients(productInfo, options 
     matchedPages: 0,
     ingredientHits: 0,
     verifiedCandidates: 0,
+    sourcesSearched: DISTRIBUTOR_SOURCES.map((source) => source.label),
+    candidateUrls: [],
     lastReason: "No distributor page matched yet."
   };
 
@@ -25,10 +35,10 @@ export async function searchDistributorPagesForIngredients(productInfo, options 
       urls: await searchDomainResults(buildSourceScopedQueries(productInfo, {
         sourceLabel: source.label
       }), [source.domain], {
-        limitPerDomain: 2,
+        limitPerDomain: 3,
         signal: options.signal,
         timeoutMs: options.searchTimeoutMs || 5000,
-        queryLimit: 1
+        queryLimit: 2
       })
     }))
   );
@@ -40,12 +50,26 @@ export async function searchDistributorPagesForIngredients(productInfo, options 
     }
 
     for (const result of hit.value.urls) {
-      inspectionJobs.push({ source: hit.value.source, url: result.url });
+      inspectionJobs.push({ source: hit.value.source, url: result.url, query: result.query });
     }
   }
 
+  const uniqueJobs = [];
+  const seenUrls = new Set();
+  for (const job of inspectionJobs) {
+    if (seenUrls.has(job.url)) continue;
+    seenUrls.add(job.url);
+    uniqueJobs.push(job);
+  }
+
+  report.candidateUrls = uniqueJobs.slice(0, 12).map((job) => ({
+    source: job.source.label,
+    url: job.url,
+    query: job.query
+  }));
+
   const inspections = await inspectCandidatePages(
-    inspectionJobs.slice(0, 3).map(({ source, url }) => ({
+    uniqueJobs.slice(0, 12).map(({ source, url }) => ({
       url,
       productInfo,
       sourceWebsite: source.label,
@@ -56,7 +80,7 @@ export async function searchDistributorPagesForIngredients(productInfo, options 
       dynamicTimeoutMs: options.dynamicTimeoutMs || 8000
     })),
     {
-      concurrency: 2,
+      concurrency: 3,
       stopOnVerified: true,
       signal: options.signal
     }
@@ -87,6 +111,10 @@ export async function searchDistributorPagesForIngredients(productInfo, options 
     } else if (candidateReport.reason) {
       report.lastReason = candidateReport.reason;
     }
+  }
+
+  if (!candidates.length && report.candidateUrls.length) {
+    report.lastReason = `Checked ${report.inspectedPages} distributor/retailer candidate page${report.inspectedPages === 1 ? "" : "s"}; no verified ingredient list was found.`;
   }
 
   return { candidates, attempts, report };

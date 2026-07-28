@@ -1,3 +1,6 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+
 import { createIngredientCandidate } from "../lib/pipeline/ingredient-candidate.js";
 import { verifyIngredientCandidate } from "../lib/url-analysis/ingredient-verifier.js";
 import { logUrlAnalysis } from "../lib/url-analysis/logger.js";
@@ -29,16 +32,63 @@ const THUMBNAIL_SELECTORS = [
   "[class*='gallery' i] img",
   "[class*='carousel' i] img",
   "[class*='slider' i] img",
+  "[class*='swiper' i] img",
+  "[class*='slick' i] img",
+  "[class*='splide' i] img",
+  "[class*='embla' i] img",
+  "[class*='product' i] img",
+  "[class*='media' i] img",
+  "[class*='pdp' i] img",
+  "[id*='image' i] img",
+  "[id*='gallery' i] img",
+  "[id*='altImages' i] img",
   "[data-image-index]",
   "[data-thumb]",
   "[data-thumbnail]",
+  "[data-old-hires]",
+  "[data-a-dynamic-image]",
   "[aria-label*='thumbnail' i]",
+  "[aria-label*='image' i]",
   "li:has(img)",
   "button:has(img)",
-  "a:has(img)"
+  "a:has(img)",
+  "img"
 ];
 
-const INSPECTED_WINDOW_VARIABLES = ["__NEXT_DATA__", "__NUXT__", "__INITIAL_STATE__", "ShopifyAnalytics", "meta", "product"];
+const GALLERY_CONTAINER_SELECTORS = [
+  "[class*='gallery' i]",
+  "[class*='carousel' i]",
+  "[class*='slider' i]",
+  "[class*='swiper' i]",
+  "[class*='slick' i]",
+  "[class*='splide' i]",
+  "[class*='embla' i]",
+  "[class*='thumb' i]",
+  "[class*='media' i]",
+  "[id*='gallery' i]",
+  "[id*='image' i]",
+  "[id*='altImages' i]",
+  "[role='listbox']",
+  "[role='region']"
+];
+
+const INSPECTED_WINDOW_VARIABLES = [
+  "__NEXT_DATA__",
+  "__NUXT__",
+  "__INITIAL_STATE__",
+  "__INITIAL_PROPS__",
+  "__APOLLO_STATE__",
+  "__PRELOADED_STATE__",
+  "ShopifyAnalytics",
+  "dataLayer",
+  "digitalData",
+  "meta",
+  "product",
+  "productData",
+  "ProductData",
+  "pdpData",
+  "__PRODUCT__"
+];
 
 function unique(values = []) {
   return [...new Set(values.filter(Boolean))];
@@ -203,19 +253,35 @@ function collectImageUrlsFromText(text = "", baseUrl = "") {
 }
 
 function expandImageCandidate(image = {}, baseUrl = "") {
-  if (String(image.url || "").startsWith("__SCRIPT_TEXT__")) {
-    return collectImageUrlsFromText(String(image.url).replace("__SCRIPT_TEXT__", ""), baseUrl).map((url) => ({
+  const rawValue = String(image.url || "");
+  const sourceFromText = rawValue.startsWith("__SCRIPT_TEXT__")
+    ? rawValue.replace("__SCRIPT_TEXT__", "")
+    : rawValue;
+  const embeddedUrls = collectImageUrlsFromText(sourceFromText, baseUrl);
+
+  if (embeddedUrls.length) {
+    const expandedEmbeddedUrls = unique(embeddedUrls.flatMap((url) => [
+      url,
+      ...createHighResolutionVariants(url)
+    ]));
+
+    return expandedEmbeddedUrls.map((url) => ({
       ...image,
       url,
-      source: image.source || "embedded-javascript",
-      className: `${image.className || ""} embedded-product-json`
+      source: image.source || (rawValue.startsWith("__SCRIPT_TEXT__") ? "embedded-javascript" : "embedded-image-json"),
+      className: `${image.className || ""} embedded-product-json`,
+      resolution: estimateImageResolution({ ...image, url })
     }));
   }
 
-  const directUrl = safeUrl(image.url, baseUrl);
+  if (rawValue.startsWith("__SCRIPT_TEXT__")) {
+    return [];
+  }
+
+  const directUrl = safeUrl(rawValue, baseUrl);
   const urls = [
     directUrl,
-    ...parseSrcset(image.url, baseUrl).map((entry) => entry.url),
+    ...parseSrcset(rawValue, baseUrl).map((entry) => entry.url),
     ...createHighResolutionVariants(directUrl)
   ].filter(Boolean);
 
@@ -247,16 +313,17 @@ async function waitForRenderedPage(page, timeoutMs) {
 }
 
 async function autoScrollForLazyImages(page, timeoutMs) {
-  const maxSteps = 8;
+  const maxSteps = 14;
   const startedAt = Date.now();
   const viewportHeight = page.viewportSize()?.height || 900;
-  const scrollHeight = await page.evaluate(() => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)).catch(() => 0);
-  const stepSize = Math.max(450, Math.floor(viewportHeight * 0.75));
+  const stepSize = Math.max(420, Math.floor(viewportHeight * 0.7));
 
-  for (let position = 0, step = 0; position <= scrollHeight && step < maxSteps; position += stepSize, step += 1) {
+  for (let position = 0, step = 0; step < maxSteps; position += stepSize, step += 1) {
     if (Date.now() - startedAt > timeoutMs) break;
+    const scrollHeight = await page.evaluate(() => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)).catch(() => 0);
+    if (position > scrollHeight + viewportHeight) break;
     await page.evaluate((nextPosition) => window.scrollTo(0, nextPosition), position).catch(() => {});
-    await page.waitForTimeout(250).catch(() => {});
+    await page.waitForTimeout(220).catch(() => {});
   }
 
   await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {});
@@ -281,8 +348,10 @@ async function extractRawImagesFromPage(page, source = "rendered-dom") {
     const srcsetUrls = (value = "") => String(value || "").split(",").map((entry) => entry.trim().split(/\s+/)[0]).filter(Boolean);
     const imageAttrs = [
       "src", "currentSrc", "srcset", "data-src", "data-srcset", "data-original", "data-image", "data-img",
-      "data-image-url", "data-image-src", "data-zoom-image", "data-large-image", "data-full-image",
-      "data-hires", "data-old-hires", "data-master", "data-a-dynamic-image", "href", "content"
+      "data-image-url", "data-image-src", "data-zoom-image", "data-zoom-url", "data-large-image", "data-large-image-url",
+      "data-full-image", "data-full-image-url", "data-hires", "data-old-hires", "data-master", "data-main-image",
+      "data-media", "data-media-url", "data-thumbnail", "data-thumb", "data-thumb-url", "data-src-medium",
+      "data-src-large", "data-zoom", "data-large", "data-full", "data-a-dynamic-image", "href", "content"
     ];
 
     document.querySelectorAll("img, image").forEach((img) => {
@@ -323,7 +392,7 @@ async function extractRawImagesFromPage(page, source = "rendered-dom") {
 
     document.querySelectorAll("*").forEach((node) => {
       const className = node.className || "";
-      const style = node.getAttribute("style") || "";
+      const style = `${node.getAttribute("style") || ""} ${getComputedStyle(node).backgroundImage || ""}`;
       for (const match of style.matchAll(/url\(["']?([^"')]+)["']?\)/gi)) {
         push(match[1], { className, source: sourceLabel, sourceDetail: "background-image" });
       }
@@ -342,6 +411,15 @@ async function extractRawImagesFromPage(page, source = "rendered-dom") {
       push(meta.getAttribute("content"), { className: "product-meta-image", source: "metadata", sourceDetail: meta.getAttribute("property") || meta.getAttribute("name") || "meta" });
     });
 
+    document.querySelectorAll("link[rel='preload'][as='image'],link[rel='prefetch'][as='image'],link[imagesrcset],link[href]").forEach((link) => {
+      const rel = link.getAttribute("rel") || "link";
+      for (const attr of ["href", "imagesrcset", "srcset"]) {
+        const value = link.getAttribute(attr) || "";
+        push(value, { className: "product-link-image", source: "metadata", sourceDetail: `${rel}:${attr}` });
+        srcsetUrls(value).forEach((url) => push(url, { className: "product-link-image", source: "metadata", sourceDetail: `${rel}:${attr}` }));
+      }
+    });
+
     document.querySelectorAll("script[type='application/ld+json'],script#__NEXT_DATA__,script").forEach((script) => {
       output.push({
         url: `__SCRIPT_TEXT__${script.textContent || ""}`,
@@ -354,12 +432,27 @@ async function extractRawImagesFromPage(page, source = "rendered-dom") {
       });
     });
 
-    for (const globalKey of ["__NEXT_DATA__", "__NUXT__", "__INITIAL_STATE__", "ShopifyAnalytics", "meta", "product"] ) {
+    const globalKeys = new Set([
+      "__NEXT_DATA__", "__NUXT__", "__INITIAL_STATE__", "__INITIAL_PROPS__", "__APOLLO_STATE__",
+      "__PRELOADED_STATE__", "ShopifyAnalytics", "dataLayer", "digitalData", "meta", "product",
+      "productData", "ProductData", "pdpData", "__PRODUCT__"
+    ]);
+
+    try {
+      Object.keys(window)
+        .filter((key) => /product|pdp|gallery|image|media|variant|carousel/i.test(key))
+        .slice(0, 80)
+        .forEach((key) => globalKeys.add(key));
+    } catch (_error) {
+      // Ignore protected global enumeration.
+    }
+
+    for (const globalKey of globalKeys) {
       try {
         const value = window[globalKey];
         if (value) {
           output.push({
-            url: `__SCRIPT_TEXT__${JSON.stringify(value).slice(0, 500000)}`,
+            url: `__SCRIPT_TEXT__${JSON.stringify(value).slice(0, 700000)}`,
             alt: globalKey,
             className: globalKey,
             width: 0,
@@ -377,6 +470,68 @@ async function extractRawImagesFromPage(page, source = "rendered-dom") {
   }, source).catch(() => []);
 }
 
+async function scrollGalleryContainers(page, timeoutMs) {
+  const startedAt = Date.now();
+  const collected = [];
+  const debug = {
+    selectorsChecked: [...GALLERY_CONTAINER_SELECTORS],
+    containersFoundBySelector: {},
+    scrollActions: 0,
+    errors: []
+  };
+
+  for (const selector of GALLERY_CONTAINER_SELECTORS) {
+    if (Date.now() - startedAt > timeoutMs) break;
+
+    let handles = [];
+    try {
+      handles = await page.$$(selector);
+      debug.containersFoundBySelector[selector] = handles.length;
+    } catch (error) {
+      debug.containersFoundBySelector[selector] = 0;
+      debug.errors.push({ selector, message: error.message });
+      continue;
+    }
+
+    for (const handle of handles.slice(0, 20)) {
+      if (Date.now() - startedAt > timeoutMs) break;
+      try {
+        await handle.scrollIntoViewIfNeeded().catch(() => {});
+        const scrollPlan = await handle.evaluate((node) => {
+          const maxLeft = Math.max(0, node.scrollWidth - node.clientWidth);
+          const maxTop = Math.max(0, node.scrollHeight - node.clientHeight);
+          return {
+            maxLeft,
+            maxTop,
+            leftSteps: maxLeft ? [0, Math.floor(maxLeft * 0.33), Math.floor(maxLeft * 0.66), maxLeft] : [0],
+            topSteps: maxTop ? [0, Math.floor(maxTop * 0.5), maxTop] : [0]
+          };
+        }).catch(() => ({ leftSteps: [0], topSteps: [0], maxLeft: 0, maxTop: 0 }));
+
+        for (const left of scrollPlan.leftSteps.slice(0, 4)) {
+          for (const top of scrollPlan.topSteps.slice(0, 3)) {
+            if (Date.now() - startedAt > timeoutMs) break;
+            await handle.evaluate((node, position) => {
+              node.scrollLeft = position.left;
+              node.scrollTop = position.top;
+            }, { left, top }).catch(() => {});
+            debug.scrollActions += 1;
+            await page.waitForTimeout(180).catch(() => {});
+            collected.push(...await extractRawImagesFromPage(page, `gallery-scroll:${selector}`));
+          }
+        }
+      } catch (error) {
+        debug.errors.push({ selector, message: error.message });
+      }
+    }
+  }
+
+  Object.defineProperty(collected, "galleryScrollDebug", {
+    value: debug,
+    enumerable: false
+  });
+  return collected;
+}
 async function collectImagesAfterThumbnailClicks(page, timeoutMs) {
   const clickedKeys = new Set();
   const collected = [];
@@ -401,7 +556,7 @@ async function collectImagesAfterThumbnailClicks(page, timeoutMs) {
       continue;
     }
 
-    for (const element of elements.slice(0, 24)) {
+    for (const element of elements.slice(0, 48)) {
       if (Date.now() - startedAt > timeoutMs) break;
       const key = await element.evaluate((node) => `${node.textContent || ""}|${node.getAttribute("src") || ""}|${node.getAttribute("href") || ""}|${node.className || ""}`.slice(0, 240)).catch(() => "");
       if (clickedKeys.has(key)) continue;
@@ -573,16 +728,20 @@ export async function collectProductImageUrlsWithPlaywright({ inputUrl, timeoutM
     Object.assign(collectionDebug, await getPageCollectionDiagnostics(page, inputUrl));
 
     const firstPass = await extractRawImagesFromPage(page, "rendered-dom:first-pass");
+    const galleryScrollBeforeClicks = await scrollGalleryContainers(page, Math.max(2200, timeoutMs - (Date.now() - startedAt)));
     await autoScrollForLazyImages(page, Math.max(2500, timeoutMs - (Date.now() - startedAt)));
     const afterScroll = await extractRawImagesFromPage(page, "rendered-dom:after-scroll");
-    const afterClicks = await collectImagesAfterThumbnailClicks(page, Math.max(2500, timeoutMs - (Date.now() - startedAt)));
+    const afterClicks = await collectImagesAfterThumbnailClicks(page, Math.max(3000, timeoutMs - (Date.now() - startedAt)));
+    const galleryScrollAfterClicks = await scrollGalleryContainers(page, Math.max(1800, timeoutMs - (Date.now() - startedAt)));
     const finalPass = await extractRawImagesFromPage(page, "rendered-dom:final-pass");
 
     const rawImages = [
       ...networkImages,
       ...firstPass,
+      ...galleryScrollBeforeClicks,
       ...afterScroll,
       ...afterClicks,
+      ...galleryScrollAfterClicks,
       ...finalPass
     ];
 
@@ -604,8 +763,10 @@ export async function collectProductImageUrlsWithPlaywright({ inputUrl, timeoutM
       rawCounts: {
         networkImages: networkImages.length,
         firstPass: firstPass.length,
+        galleryScrollBeforeClicks: galleryScrollBeforeClicks.length,
         afterScroll: afterScroll.length,
         afterThumbnailClicks: afterClicks.length,
+        galleryScrollAfterClicks: galleryScrollAfterClicks.length,
         finalPass: finalPass.length
       },
       rawImageCount: rawImages.length,
@@ -613,6 +774,10 @@ export async function collectProductImageUrlsWithPlaywright({ inputUrl, timeoutM
       imageCount: images.length,
       sourceCounts,
       galleryDebug: afterClicks.galleryDebug || {},
+      galleryScrollDebug: {
+        beforeClicks: galleryScrollBeforeClicks.galleryScrollDebug || {},
+        afterClicks: galleryScrollAfterClicks.galleryScrollDebug || {}
+      },
       galleryRequiredInteraction: Boolean(afterClicks.galleryDebug?.galleryRequiredInteraction),
       totalDurationMs: Date.now() - startedAt
     });
@@ -914,8 +1079,113 @@ export async function cleanOcrIngredientTextWithAi({ rawText = "", product = {} 
   return parsedText.trim();
 }
 
+function extensionFromContentType(contentType = "", fallbackUrl = "") {
+  const normalized = String(contentType || "").split(";")[0].trim().toLowerCase();
+  const byType = {
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/avif": ".avif",
+    "image/gif": ".gif",
+    "image/bmp": ".bmp",
+    "image/tiff": ".tiff"
+  };
+
+  if (byType[normalized]) return byType[normalized];
+
+  try {
+    const match = new URL(fallbackUrl).pathname.match(/\.(jpe?g|png|webp|avif|gif|bmp|tiff?)(?:$|[?#])/i);
+    if (match?.[1]) return match[0].startsWith(".") ? `.${match[1].toLowerCase().replace("jpeg", "jpg")}` : ".jpg";
+  } catch (_error) {
+    // Ignore malformed URLs.
+  }
+
+  return ".jpg";
+}
+
+function sanitizeDebugPathPart(value = "") {
+  return String(value || "")
+    .replace(/[^a-z0-9_-]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "product";
+}
+
+function getDebugImageFolder({ inputUrl = "", traceId = "" } = {}) {
+  const root = process.env.DERMINTEL_DEBUG_IMAGE_DIR || path.join(process.cwd(), "debug-images");
+  let host = "product";
+  try {
+    host = new URL(inputUrl).hostname.replace(/^www\./i, "");
+  } catch (_error) {
+    // Use fallback folder name.
+  }
+
+  return path.join(root, `${sanitizeDebugPathPart(traceId || Date.now())}-${sanitizeDebugPathPart(host)}`);
+}
+
+async function downloadSingleDebugImage(image = {}, index = 0, folder = "") {
+  const imageNumber = image.imageNumber || index + 1;
+  const startedAt = Date.now();
+  const base = {
+    imageNumber,
+    url: image.url,
+    attempted: true,
+    succeeded: false,
+    status: null,
+    contentType: "",
+    byteLength: 0,
+    filePath: "",
+    error: "",
+    durationMs: 0
+  };
+
+  try {
+    const response = await fetchWithTimeout(image.url, {}, 5000);
+    const contentType = response.headers?.get?.("content-type") || "";
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const extension = extensionFromContentType(contentType, image.url);
+    const filePath = path.join(folder, `image-${imageNumber}${extension}`);
+
+    await fs.writeFile(filePath, buffer);
+
+    return {
+      ...base,
+      succeeded: response.ok,
+      status: response.status,
+      contentType,
+      byteLength: buffer.length,
+      filePath,
+      base64: response.ok ? buffer.toString("base64") : "",
+      durationMs: Date.now() - startedAt,
+      error: response.ok ? "" : `Image download failed with status ${response.status}.`
+    };
+  } catch (error) {
+    return {
+      ...base,
+      durationMs: Date.now() - startedAt,
+      error: error.message
+    };
+  }
+}
+
+function sanitizeDebugDownload(download = {}) {
+  const { base64: _base64, ...safeDownload } = download;
+  return safeDownload;
+}
+
+async function downloadImagesForDebug(images = [], { inputUrl = "", traceId = "" } = {}) {
+  const folder = getDebugImageFolder({ inputUrl, traceId });
+  await fs.mkdir(folder, { recursive: true });
+  const downloads = await mapWithConcurrency(images, 4, (image, index) => downloadSingleDebugImage(image, index, folder));
+  return {
+    folder,
+    downloads
+  };
+}
+
 function summarizeImageForDiagnostics(image = {}) {
   return {
+    imageNumber: image.imageNumber || null,
     url: image.url,
     source: image.source || "unknown",
     sourceDetail: image.sourceDetail || "",
@@ -967,19 +1237,25 @@ function createOcrDiagnostic({ image, ocrResult = {}, download = {}, error = nul
   const rawText = ocrResult.rawText || "";
   const extractedIngredientsText = ocrResult.extractedIngredientsText || "";
   const scoring = scoreOcrIngredientText(extractedIngredientsText || rawText);
+  const ocrPreview = (rawText || extractedIngredientsText).replace(/\s+/g, " ").trim().slice(0, 420);
 
   return {
     ...summarizeImageForDiagnostics(image),
+    debugFilePath: download.filePath || "",
     downloadAttempted: Boolean(download.attempted),
     downloadSucceeded: download.succeeded,
     downloadStatus: download.status,
+    downloadContentType: download.contentType || "",
+    downloadByteLength: download.byteLength || 0,
     downloadError: download.error || "",
     ocrSucceeded: !error && Boolean(rawText || extractedIngredientsText),
     provider: ocrResult.provider || (error ? "failed" : "unknown"),
     rawTextLength: rawText.length,
     extractedTextLength: extractedIngredientsText.length,
+    ocrPreview,
     score: scoring.score,
     isIngredientText: scoring.isIngredientText,
+    ingredientKeywordsDetected: scoring.keywordHits.length > 0,
     keywordHits: scoring.keywordHits,
     ingredientLikeCount: scoring.ingredientLikeCount,
     error: error?.message || ocrResult.error || ""
@@ -1008,11 +1284,20 @@ export async function searchProductImagesForIngredients({
   const candidates = [];
   const attempts = [];
 
-  const images = await collectImagesFn({
+  const collectedImages = await collectImagesFn({
     inputUrl,
-    timeoutMs: 8000,
+    timeoutMs: 15000,
     signal
   });
+  const images = collectedImages.map((image, index) => ({
+    ...image,
+    imageNumber: index + 1
+  }));
+  Object.defineProperty(images, "collectionDebug", {
+    value: collectedImages.collectionDebug || null,
+    enumerable: false
+  });
+
   report.imageCount = images.length;
   report.imageUrls = images.map(summarizeImageForDiagnostics);
   report.imageCollectionDebug = images.collectionDebug || null;
@@ -1030,17 +1315,45 @@ export async function searchProductImagesForIngredients({
     return { candidates, attempts, report };
   }
 
+  let debugDownloads = { folder: "", downloads: [] };
+  const shouldDownloadDebugImages = ocrFn === extractIngredientsFromLabelImage && process.env.DERMINTEL_SKIP_DEBUG_IMAGE_DOWNLOADS !== "true";
+
+  if (shouldDownloadDebugImages) {
+    debugDownloads = await downloadImagesForDebug(images, { inputUrl, traceId });
+    report.debugImageFolder = debugDownloads.folder;
+    report.debugImageDownloads = debugDownloads.downloads.map(sanitizeDebugDownload);
+    logUrlAnalysis("product-image-debug-downloads", {
+      traceId,
+      inputUrl,
+      imageCount: images.length,
+      debugImageFolder: debugDownloads.folder,
+      downloads: report.debugImageDownloads
+    });
+  } else {
+    report.debugImageFolder = "";
+    report.debugImageDownloads = [];
+  }
+
+  const debugDownloadByNumber = new Map(debugDownloads.downloads.map((download) => [download.imageNumber, download]));
+
   const ocrResults = await mapWithConcurrency(images, OCR_CONCURRENCY, async (image) => {
     if (signal?.aborted) return null;
 
     report.ocrAttempts += 1;
     const tracker = createTrackedImageFetch(image.url);
+    const debugDownload = debugDownloadByNumber.get(image.imageNumber);
+    const downloadForDiagnostics = debugDownload?.base64 ? sanitizeDebugDownload(debugDownload) : tracker.download;
 
     try {
-      const ocrResult = await ocrFn({
-        imageUrl: image.url,
-        fetchFn: tracker.fetchFn
-      });
+      const ocrResult = await ocrFn(debugDownload?.base64
+        ? {
+            imageBase64: debugDownload.base64,
+            fetchFn: tracker.fetchFn
+          }
+        : {
+            imageUrl: image.url,
+            fetchFn: tracker.fetchFn
+          });
       const result = {
         image,
         provider: ocrResult.provider || "unknown",
@@ -1050,7 +1363,7 @@ export async function searchProductImagesForIngredients({
       const diagnostic = createOcrDiagnostic({
         image,
         ocrResult: result,
-        download: tracker.download
+        download: downloadForDiagnostics
       });
       report.ocrDiagnostics.push(diagnostic);
       logUrlAnalysis("product-image-ocr-result", {
@@ -1070,7 +1383,7 @@ export async function searchProductImagesForIngredients({
       const diagnostic = createOcrDiagnostic({
         image,
         ocrResult: result,
-        download: tracker.download,
+        download: downloadForDiagnostics,
         error
       });
       report.ocrDiagnostics.push(diagnostic);
@@ -1086,7 +1399,10 @@ export async function searchProductImagesForIngredients({
   report.selectedImageCount = bestOcr ? 1 : 0;
 
   if (!bestOcr) {
-    report.lastReason = `OCR scanned ${images.length} product image${images.length === 1 ? "" : "s"}, but none contained ingredient-label text.`;
+    const keywordImageCount = report.ocrDiagnostics.filter((item) => item.ingredientKeywordsDetected).length;
+    report.lastReason = keywordImageCount
+      ? `OCR scanned ${images.length} product image${images.length === 1 ? "" : "s"}; ${keywordImageCount} image${keywordImageCount === 1 ? "" : "s"} had ingredient keywords, but none passed full-label verification.`
+      : `OCR scanned ${images.length} product image${images.length === 1 ? "" : "s"}, but none contained ingredient-label text.`;
     return { candidates, attempts, report };
   }
 
@@ -1142,12 +1458,11 @@ export async function searchProductImagesForIngredients({
     ocrAttempts: report.ocrAttempts,
     verifiedCandidates: report.verifiedCandidates,
     imageUrls: report.imageUrls,
+    debugImageFolder: report.debugImageFolder,
+    debugImageDownloads: report.debugImageDownloads,
     ocrDiagnostics: report.ocrDiagnostics,
     lastReason: report.lastReason
   });
 
   return { candidates, attempts, report };
 }
-
-
-
