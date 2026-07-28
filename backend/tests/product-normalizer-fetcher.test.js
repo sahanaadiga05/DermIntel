@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { fetchPageWithStrategies, shouldAttemptDynamicFallbackAfterStaticFailure } from "../src/lib/url-analysis/page-fetcher.js";
 import { createProductFingerprint } from "../src/lib/knowledge-base/product-fingerprint.js";
 import { buildProductSearchPhrases } from "../src/lib/url-analysis/search-utils.js";
-import { extractProductSku, normalizeProductName } from "../src/lib/product-normalizer.js";
+import { detectBrand, extractProductSku, normalizeProductName } from "../src/lib/product-normalizer.js";
 import { deriveFallbackNameFromUrl, hasIngredientUsefulMetadataCache, shouldRetryWithDynamicFetch } from "../src/services/product-resolver.js";
 
 test("normalizeProductName removes common ecommerce marketing phrases", () => {
@@ -151,4 +151,12 @@ test("Nykaa product slug is used when numeric product id is the last path segmen
   assert.match(fallbackName, /Chemist At Play/i);
   assert.match(fallbackName, /Face Wash/i);
   assert.doesNotMatch(fallbackName, /^12020770$/);
+});
+test("brand detection prefers product slug brand over retailer hostname", () => {
+  const brand = detectBrand(
+    "Chemist At Play Salicylic Acid Oil Acne Control Face Wash For Oily Acne Prone Skin",
+    "www.nykaa.com"
+  );
+
+  assert.equal(brand, "Chemist At Play");
 });

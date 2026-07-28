@@ -150,17 +150,27 @@ export function extractProductSku(...candidates) {
   return "";
 }
 
+function formatKnownBrand(brand = "") {
+  return brand
+    .split(" ")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function getBrandsBySpecificity() {
+  return [...KNOWN_BRANDS].sort((left, right) => right.length - left.length);
+}
+
 export function detectBrand(...candidates) {
   const normalizedCandidates = candidates
     .filter(Boolean)
     .map((candidate) => candidate.toLowerCase().replace(/[._/-]+/g, " "));
 
-  for (const brand of KNOWN_BRANDS) {
-    if (normalizedCandidates.some((candidate) => candidate.includes(brand))) {
-      return brand
-        .split(" ")
-        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-        .join(" ");
+  for (const candidate of normalizedCandidates) {
+    for (const brand of getBrandsBySpecificity()) {
+      if (candidate.includes(brand)) {
+        return formatKnownBrand(brand);
+      }
     }
   }
 
