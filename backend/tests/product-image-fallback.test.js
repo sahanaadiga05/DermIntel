@@ -88,6 +88,40 @@ test("generic image normalization prefers highest resolution variants", () => {
   assert.ok(images[0].resolution >= 1600);
 });
 
+test("Amazon image normalization rejects share links, tracking pixels, and unrelated hosts", () => {
+  const images = normalizeAndSelectImages(
+    [
+      {
+        url: "https://m.media-amazon.com/images/I/71cleanser-back-label._SL1500_.jpg",
+        source: "product-gallery",
+        alt: "Pears cleanser back label ingredients",
+        width: 1500,
+        height: 1500
+      },
+      {
+        url: "https://www.amazon.in/dp/%7B%22share%22:true%7D",
+        source: "rendered-dom",
+        alt: "social share image"
+      },
+      {
+        url: "https://fls-eu.amazon.in/1/batch/1/OP/ASSOC/track.gif",
+        source: "network-response",
+        width: 1,
+        height: 1
+      },
+      {
+        url: "https://unrelated.example.com/recommendation.jpg",
+        source: "rendered-dom",
+        alt: "Recommended product"
+      }
+    ],
+    "https://www.amazon.in/dp/B006LXCJ6I"
+  );
+
+  assert.equal(images.length, 1);
+  assert.match(images[0].url, /cleanser-back-label/);
+});
+
 test("product image ranking prefers back-label and ingredient images", () => {
   const ranked = rankImageCandidates([
     {

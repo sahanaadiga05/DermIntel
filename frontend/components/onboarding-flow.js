@@ -169,36 +169,36 @@ export function OnboardingFlow() {
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      <div className="grid min-h-[calc(100vh-3rem)] gap-8 lg:grid-cols-[360px_minmax(0,1fr)]">
-        <aside className="glass-panel rounded-[36px] p-6 shadow-panel">
+    <main className="mx-auto min-h-screen w-full max-w-[1440px] overflow-hidden px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+      <div className="grid min-h-[calc(100vh-3rem)] min-w-0 gap-5 lg:grid-cols-[330px_minmax(0,1fr)]">
+        <aside className="glass-panel min-w-0 rounded-[30px] p-5 shadow-panel lg:sticky lg:top-6 lg:self-start">
           <BrandMark />
-          <div className="mt-8 rounded-[28px] bg-[linear-gradient(160deg,rgba(24,60,45,0.96),rgba(16,35,26,0.82))] p-6 text-white">
+          <div className="mt-7 rounded-[26px] bg-[linear-gradient(160deg,rgba(24,60,45,0.98),rgba(16,35,26,0.88))] p-5 text-white">
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/58">
               Skin profile setup
             </p>
-            <h1 className="mt-3 text-3xl font-semibold leading-tight">
-              Build your permanent DermIntel passport.
+            <h1 className="display-type mt-3 text-3xl font-semibold leading-[1.05]">
+              Build your skin passport.
             </h1>
-            <p className="mt-4 text-sm leading-7 text-white/72">
+            <p className="mt-4 text-sm leading-6 text-white/68">
               One thoughtful setup helps every future ingredient scan feel personal, safer, and
               smarter.
             </p>
           </div>
 
-          <div className="mt-6 space-y-4 rounded-[28px] border border-ink/8 bg-white/72 p-5">
+          <div className="mt-4 space-y-3 rounded-[24px] border border-ink/8 bg-white/72 p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-pine/56">
               Signed in as
             </p>
             <p className="text-lg font-semibold text-ink">{user?.name || "DermIntel User"}</p>
-            <p className="text-sm text-ink/62">{user?.email}</p>
+            <p className="break-all text-sm text-ink/62">{user?.email}</p>
             <div className="rounded-2xl bg-mist px-4 py-3 text-sm text-ink/64">
               Progress: {stepIndex + 1} of {PROFILE_QUESTION_STEPS.length}
             </div>
           </div>
         </aside>
 
-        <section className="glass-panel flex flex-col rounded-[36px] p-6 shadow-panel">
+        <section className="glass-panel flex min-w-0 flex-col overflow-hidden rounded-[30px] p-5 shadow-panel sm:p-7">
           <div>
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -221,7 +221,7 @@ export function OnboardingFlow() {
             </div>
           </div>
 
-          <div className="flex flex-1 flex-col justify-center py-8">
+          <div className="flex flex-1 flex-col justify-center py-7">
             <AnimatePresence mode="wait">
               <motion.div
                 key={currentStep.field}
@@ -232,7 +232,7 @@ export function OnboardingFlow() {
                 className="mx-auto w-full max-w-3xl"
               >
                 <div className="mb-8">
-                  <h2 className="text-3xl font-semibold text-ink sm:text-4xl">
+                  <h2 className="display-type text-3xl font-semibold leading-tight text-ink sm:text-5xl">
                     {currentStep.title}
                   </h2>
                   <p className="mt-3 max-w-2xl text-base leading-7 text-ink/64">
@@ -241,7 +241,7 @@ export function OnboardingFlow() {
                 </div>
 
                 {currentStep.type === "single" ? (
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid min-w-0 gap-3 sm:grid-cols-2">
                     {currentOptions.map((option) => (
                       <OptionCard
                         key={option.value}
@@ -253,7 +253,7 @@ export function OnboardingFlow() {
                     ))}
                   </div>
                 ) : (
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid min-w-0 gap-3 sm:grid-cols-2">
                     {currentOptions.map((option) => (
                       <OptionCard
                         key={option.value}
@@ -340,7 +340,7 @@ function OptionCard({ label, description, selected, onClick, multi = false }) {
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-[28px] border p-5 text-left transition ${
+      className={`lift-card min-w-0 rounded-[22px] border p-4 text-left transition sm:p-5 ${
         selected
           ? "border-pine bg-pine text-white shadow-panel"
           : "border-ink/8 bg-white/78 text-ink hover:border-pine/30"

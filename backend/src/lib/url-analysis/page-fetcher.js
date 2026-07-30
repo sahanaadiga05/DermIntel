@@ -204,8 +204,30 @@ export async function fetchDynamicHtml(url, { timeoutMs = 8000, signal } = {}) {
 
     const playwright = await import("playwright");
     browser = await playwright.chromium.launch({ headless: true });
-    page = await browser.newPage({ userAgent: DEFAULT_HEADERS["User-Agent"] });
-    await page.goto(url, { waitUntil: "networkidle", timeout: timeoutMs });
+    page = await browser.newPage({
+      userAgent: DEFAULT_HEADERS["User-Agent"],
+      locale: "en-US",
+      extraHTTPHeaders: {
+        "Accept-Language": "en-US,en;q=0.9"
+      }
+    });
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    await page.waitForLoadState("networkidle", { timeout: Math.min(3500, timeoutMs) }).catch(() => {});
+
+    const ingredientControls = page.locator(
+      "button,summary,[role='button'],[role='tab'],a[href^='#']"
+    ).filter({ hasText: /(?:full\s+)?ingredients?(?:\s+list)?|inci|composition/i });
+    const controlCount = Math.min(await ingredientControls.count(), 8);
+    for (let index = 0; index < controlCount; index += 1) {
+      const control = ingredientControls.nth(index);
+      if (await control.isVisible().catch(() => false)) {
+        await control.click({ timeout: 1200 }).catch(() => {});
+      }
+    }
+    if (controlCount > 0) {
+      await page.waitForTimeout(350);
+    }
+
     throwIfAborted(signal);
     const html = await page.content();
     const finalUrl = page.url();

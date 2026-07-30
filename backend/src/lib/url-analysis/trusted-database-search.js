@@ -14,6 +14,37 @@ const TRUSTED_DATABASES = [
   { label: "Lookfantastic", domain: "lookfantastic.com" }
 ];
 
+function slugifyProduct(value = "") {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\bfacewash\b/g, "face wash")
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+export function buildTrustedDirectUrls(productInfo = {}) {
+  const brand = productInfo.brand || "";
+  const name = productInfo.canonicalName || productInfo.name || "";
+  const compactName = name
+    .replace(/\b(?:daily|mild|cleanser|for all skin types?|soap free|balances? ph)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const slugs = [
+    slugifyProduct(`${brand} ${compactName}`),
+    slugifyProduct(`${brand} ${String(compactName).replace(/\bcleansing face wash\b/i, "face wash")}`),
+    slugifyProduct(`${brand} ${name}`)
+  ].filter(Boolean);
+
+  return [...new Set(slugs)].flatMap((slug) => [
+    {
+      source: { label: "INCI Decoder", domain: "incidecoder.com" },
+      url: `https://incidecoder.com/products/${slug}`,
+      query: "direct-slug"
+    }
+  ]);
+}
+
 export async function searchTrustedDatabasesForIngredients(productInfo, options = {}) {
   const candidates = [];
   const attempts = [];
@@ -26,6 +57,49 @@ export async function searchTrustedDatabasesForIngredients(productInfo, options 
     candidateUrls: [],
     lastReason: "No trusted database result matched yet."
   };
+
+  const directJobs = buildTrustedDirectUrls(productInfo);
+  const directInspections = await inspectCandidatePages(
+    directJobs.map(({ source, url }) => ({
+      url,
+      productInfo,
+      sourceWebsite: source.label,
+      extractionMethod: `trusted-database:${source.label}`,
+      ingredientSource: source.label,
+      minIngredientCount: 8,
+      staticTimeoutMs: Math.min(options.fetchTimeoutMs || 5000, 3500),
+      dynamicTimeoutMs: Math.min(options.dynamicTimeoutMs || 8000, 5500)
+    })),
+    {
+      concurrency: 2,
+      stopOnVerified: true,
+      signal: options.signal
+    }
+  );
+
+  for (const inspection of directInspections) {
+    if (inspection.status !== "fulfilled") continue;
+    const inspected = inspection.value;
+    report.inspectedPages += 1;
+    attempts.push(...(inspected.attempts || []));
+    if (inspected.report?.parsedProduct) report.matchedPages += 1;
+    if (inspected.report?.foundIngredients) report.ingredientHits += 1;
+    if (inspected.candidate) {
+      candidates.push(inspected.candidate);
+      report.verifiedCandidates += 1;
+      report.lastReason = `Found verified ingredients on ${inspected.candidate.sourceWebsite}.`;
+    }
+  }
+
+  report.candidateUrls = directJobs.map((job) => ({
+    source: job.source.label,
+    url: job.url,
+    query: job.query
+  }));
+
+  if (candidates.length) {
+    return { candidates, attempts, report };
+  }
 
   const searchHits = await Promise.allSettled(
     TRUSTED_DATABASES.map(async (source) => ({
@@ -60,11 +134,11 @@ export async function searchTrustedDatabasesForIngredients(productInfo, options 
     uniqueJobs.push(job);
   }
 
-  report.candidateUrls = uniqueJobs.slice(0, 12).map((job) => ({
+  report.candidateUrls.push(...uniqueJobs.slice(0, 12).map((job) => ({
     source: job.source.label,
     url: job.url,
     query: job.query
-  }));
+  })));
 
   const inspections = await inspectCandidatePages(
     uniqueJobs.slice(0, 12).map(({ source, url }) => ({

@@ -230,17 +230,17 @@ export function DashboardShell() {
   const userInitials = getUserInitials(user?.name, user?.email);
 
   return (
-    <main className="mx-auto min-h-screen max-w-7xl px-4 py-4 sm:px-6 sm:py-5 lg:px-8">
+    <main className="mx-auto min-h-screen w-full max-w-[1440px] overflow-hidden px-4 py-4 sm:px-6 sm:py-5 lg:px-8">
       <motion.section
         initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.45 }}
-        className="mb-6 overflow-hidden rounded-[32px] border border-white/50 bg-[linear-gradient(135deg,rgba(24,60,45,0.96),rgba(16,35,26,0.88))] px-5 py-4 text-white shadow-panel sm:px-6 sm:py-5"
+        className="mb-5 overflow-hidden rounded-[26px] border border-white/50 bg-[linear-gradient(135deg,rgba(24,60,45,0.98),rgba(16,35,26,0.9))] px-4 py-4 text-white shadow-panel sm:px-6"
       >
         <div className="flex items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-4">
+          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
             <BrandMark tone="dark" />
-            <div className="min-w-0 border-l border-white/12 pl-4">
+            <div className="hidden min-w-0 border-l border-white/12 pl-4 sm:block">
               <p className="truncate text-sm font-semibold text-white sm:text-base">
                 Welcome back, {user?.name || "DermIntel member"}
               </p>
@@ -264,9 +264,9 @@ export function DashboardShell() {
         </div>
       </motion.section>
 
-      <div className="grid gap-6 md:grid-cols-[minmax(240px,0.4fr)_minmax(0,0.6fr)] lg:grid-cols-[minmax(280px,0.3fr)_minmax(0,0.7fr)]">
-        <div className="md:self-start">
-          <SectionCard title="Skin Passport" eyebrow="Your Profile" className="p-5">
+      <div className="grid min-w-0 gap-5 lg:grid-cols-12">
+        <div className="min-w-0 lg:col-span-4 lg:self-start xl:col-span-3">
+          <SectionCard title="Your skin passport" eyebrow="Personal context" className="h-full p-5">
             <div className="rounded-[24px] bg-[linear-gradient(160deg,rgba(24,60,45,0.96),rgba(16,35,26,0.88))] p-5 text-white shadow-panel">
               <div className="flex items-center gap-3">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/12 bg-white/10 text-base font-semibold text-white ring-1 ring-white/10">
@@ -292,7 +292,7 @@ export function DashboardShell() {
                 <p className="mt-3 text-sm leading-7 text-white/82">{profileSummary}</p>
               </div>
 
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <div className="mt-5 grid gap-3">
                 <button
                   type="button"
                   onClick={handleEditSkinProfile}
@@ -313,9 +313,9 @@ export function DashboardShell() {
           </SectionCard>
         </div>
 
-        <div>
-          <SectionCard title="Analyze Product" eyebrow="Input Channels">
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 lg:col-span-8 xl:col-span-9">
+          <SectionCard title="Decode a product" eyebrow="New analysis" className="h-full">
+            <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(280px,.92fr)]">
               <div className="space-y-4">
                 <label className="block">
                   <span className="mb-2 block text-sm font-medium text-ink/70">
@@ -327,7 +327,7 @@ export function DashboardShell() {
                       type="url"
                       value={productUrl}
                       onChange={(event) => setProductUrl(event.target.value)}
-                      className="w-full rounded-2xl border border-ink/10 bg-white py-3 pl-11 pr-4 text-sm outline-none transition focus:border-pine"
+                      className="w-full min-w-0 rounded-2xl border border-ink/10 bg-white py-3 pl-11 pr-4 text-sm outline-none transition focus:border-pine focus:ring-4 focus:ring-pine/5"
                       placeholder="https://www.nykaa.com/... or https://www.amazon.in/..."
                     />
                   </div>
@@ -341,7 +341,7 @@ export function DashboardShell() {
                     list="catalog-products"
                     value={searchQuery}
                     onChange={(event) => setSearchQuery(event.target.value)}
-                    className="w-full rounded-2xl border border-ink/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-pine"
+                    className="w-full min-w-0 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-pine focus:ring-4 focus:ring-pine/5"
                     placeholder="Type a face wash, serum, sunscreen, shampoo..."
                   />
                   <datalist id="catalog-products">
@@ -359,7 +359,7 @@ export function DashboardShell() {
                     rows={6}
                     value={manualIngredients}
                     onChange={(event) => setManualIngredients(event.target.value)}
-                    className="w-full rounded-2xl border border-ink/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-pine"
+                    className="w-full min-w-0 resize-y rounded-2xl border border-ink/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-pine focus:ring-4 focus:ring-pine/5"
                     placeholder="Water, Glycerin, Niacinamide, Fragrance..."
                   />
                 </label>
@@ -385,12 +385,12 @@ export function DashboardShell() {
                 </button>
               </div>
 
-              <div className="rounded-[28px] bg-pine p-5 text-white">
+              <div className="min-w-0 overflow-hidden rounded-[24px] bg-pine p-5 text-white">
                 <div className="flex items-center gap-2 text-sm font-medium text-white/70">
                   <Sparkles className="h-4 w-4" />
                   Personalized verdict
                 </div>
-                <h3 className="mt-3 text-2xl font-semibold">
+                <h3 className="display-type mt-3 break-words text-3xl font-semibold leading-tight">
                   {result?.productName || analysisMeta?.label || "Awaiting analysis"}
                 </h3>
                 <p className="mt-3 text-sm leading-6 text-white/76">
@@ -414,7 +414,7 @@ export function DashboardShell() {
                       <Globe className="h-4 w-4" />
                       Source: {analysisMeta.channel}
                     </div>
-                    <p className="font-medium text-white">{analysisMeta.label}</p>
+                    <p className="break-all font-medium text-white">{analysisMeta.label}</p>
                     {analysisMeta.platform ? (
                       <p className="text-white/68">Platform: {analysisMeta.platform}</p>
                     ) : null}
@@ -481,24 +481,28 @@ export function DashboardShell() {
         </div>
       </div>
 
-      <SectionCard title="Score Snapshot" eyebrow="Charts" className="mt-6">
+      <SectionCard title="Formula snapshot" eyebrow="Scores & signals" className="mt-5">
         {result && scoreSummary ? (
           <>
-            <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-12">
+              <div className="min-w-0 md:col-span-6 lg:col-span-4">
               <ScoreMetricCard
                 label="Safety"
                 value={scoreSummary.safety}
                 status={scoreSummary.safetyStatus}
               />
+              </div>
+              <div className="min-w-0 md:col-span-6 lg:col-span-4">
               <ScoreMetricCard
                 label="Suitability"
                 value={scoreSummary.suitability}
                 status={scoreSummary.suitabilityStatus}
               />
+              </div>
               <motion.div
                 whileHover={{ y: -2 }}
                 transition={{ duration: 0.2 }}
-                className="flex min-h-[260px] flex-col justify-between rounded-[26px] border border-ink/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(244,248,244,0.92))] p-5 shadow-sm transition-shadow duration-300 hover:shadow-panel md:col-span-2 lg:col-span-1"
+                className="bento-card lift-card flex min-h-[260px] min-w-0 flex-col justify-between rounded-[26px] p-5 md:col-span-12 lg:col-span-4"
               >
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.24em] text-pine/54">
@@ -555,11 +559,11 @@ export function DashboardShell() {
         )}
       </SectionCard>
 
-      <div className="mt-6 space-y-6">
-        <SectionCard title="Personalized Verdict" eyebrow="Analysis Result">
+      <div className="mt-5 grid min-w-0 gap-5">
+        <SectionCard title="Your personalized verdict" eyebrow="Analysis result">
           {result ? (
-            <div className="grid gap-6 lg:grid-cols-2">
-              <div className="space-y-4">
+            <div className="grid min-w-0 gap-4 xl:grid-cols-12">
+              <div className="min-w-0 space-y-4 xl:col-span-4">
                 <InfoList
                   icon={<ShieldCheck className="h-4 w-4" />}
                   title="Top positives"
@@ -576,7 +580,7 @@ export function DashboardShell() {
                 />
               </div>
 
-              <div className="space-y-4">
+              <div className="min-w-0 space-y-4 xl:col-span-8">
                 {analysisMeta?.ingredientList?.length ? (
                   <VerifiedIngredientsListCard
                     ingredients={analysisMeta.ingredientList}
@@ -611,12 +615,12 @@ export function DashboardShell() {
           )}
         </SectionCard>
 
-        <SectionCard title="Alternative Picks" eyebrow="Recommendations">
+        <SectionCard title="Better-matched alternatives" eyebrow="Recommendations">
           <div className="grid gap-4 md:grid-cols-3">
             {(result?.alternatives || []).map((product) => (
               <article
                 key={product.id}
-                className="rounded-[24px] border border-ink/8 bg-white/72 p-5 transition hover:-translate-y-1"
+                className="lift-card min-w-0 rounded-[24px] border border-ink/8 bg-white/72 p-5"
               >
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-pine/56">
                   {product.category}
@@ -639,7 +643,7 @@ function ScoreMetricCard({ label, value, status }) {
     <motion.div
       whileHover={{ y: -2, scale: 1.01 }}
       transition={{ duration: 0.2 }}
-      className="flex min-h-[260px] flex-col items-center justify-center rounded-[26px] border border-ink/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(247,250,247,0.92))] px-4 py-5 text-center shadow-sm transition-shadow duration-300 hover:shadow-panel"
+      className="bento-card lift-card flex min-h-[260px] w-full min-w-0 flex-col items-center justify-center rounded-[26px] px-4 py-5 text-center"
     >
       <ScoreDonut value={value} size={152} />
       <p className="mt-4 text-sm font-semibold text-ink">{label}</p>
@@ -681,7 +685,7 @@ function VerifiedIngredientsReadCard({ ingredients = [], extractionMethod = "" }
         {visibleIngredients.map((ingredient) => (
           <span
             key={ingredient}
-            className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs font-medium text-white/82"
+            className="max-w-full break-words rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs font-medium text-white/82"
           >
             {formatIngredientName(ingredient)}
           </span>
@@ -755,7 +759,7 @@ function VerifiedIngredientsListCard({ ingredients = [], extractionMethod = "", 
         </span>
       </div>
 
-      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+      <div className="mt-4 grid min-w-0 gap-2 sm:grid-cols-2">
         {ingredients.map((ingredient, index) => (
           <div
             key={`${ingredient}-${index}`}
@@ -764,7 +768,7 @@ function VerifiedIngredientsListCard({ ingredients = [], extractionMethod = "", 
             <span className="flex h-6 w-6 flex-none items-center justify-center rounded-full bg-pine/10 text-xs font-semibold text-pine">
               {index + 1}
             </span>
-            <span className="font-medium capitalize">{formatIngredientName(ingredient)}</span>
+            <span className="min-w-0 break-words font-medium capitalize">{formatIngredientName(ingredient)}</span>
           </div>
         ))}
       </div>
@@ -785,8 +789,8 @@ function IngredientBreakdownCard({ result }) {
         </div>
       </div>
 
-      <div className="mt-4 overflow-x-auto rounded-[22px] border border-ink/8 bg-white/80">
-        <table className="min-w-full divide-y divide-ink/8 text-sm">
+      <div className="no-scrollbar mt-4 max-w-full overflow-x-auto rounded-[22px] border border-ink/8 bg-white/80">
+        <table className="min-w-[760px] divide-y divide-ink/8 text-sm">
           <thead className="bg-mist/70 text-left text-xs uppercase tracking-[0.18em] text-pine/62">
             <tr>
               <th className="px-4 py-3 font-semibold">Ingredient</th>

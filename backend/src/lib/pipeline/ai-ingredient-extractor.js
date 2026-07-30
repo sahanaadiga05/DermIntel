@@ -291,6 +291,29 @@ function normalizeIngredients(value) {
     : [];
 }
 
+function normalizeForEvidence(value = "") {
+  return String(value)
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getIngredientEvidence(ingredients = [], pageText = "") {
+  const normalizedPage = ` ${normalizeForEvidence(pageText)} `;
+  const supported = ingredients.filter((ingredient) => {
+    const normalizedIngredient = normalizeForEvidence(ingredient);
+    return normalizedIngredient.length >= 3 && normalizedPage.includes(` ${normalizedIngredient} `);
+  });
+
+  return {
+    supported,
+    supportRate: supported.length / Math.max(ingredients.length, 1)
+  };
+}
+
 function serializeCandidates(candidates = []) {
   return candidates
     .slice(0, 8)
@@ -328,6 +351,11 @@ export async function extractIngredientsWithAi({ pageText = "", sourceUrl = "", 
     return null;
   }
 
+  const evidence = getIngredientEvidence(ingredients, pageText);
+  if (evidence.supported.length < Math.min(8, ingredients.length) || evidence.supportRate < 0.85) {
+    return null;
+  }
+
   return createIngredientCandidate({
     sourceUrl,
     sourceWebsite,
@@ -338,7 +366,9 @@ export async function extractIngredientsWithAi({ pageText = "", sourceUrl = "", 
     metadata: {
       provider: result.provider,
       model: result.model,
-      sourceBlock: "clean-page-text"
+      sourceBlock: "clean-page-text",
+      evidenceSupportRate: Number(evidence.supportRate.toFixed(2)),
+      evidenceSupportedCount: evidence.supported.length
     },
     product
   });

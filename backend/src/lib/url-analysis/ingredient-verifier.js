@@ -38,6 +38,23 @@ function containsMarketingWord(token = "") {
   return MARKETING_KEYWORDS.some((keyword) => lowered.includes(keyword));
 }
 
+function looksLikePlausibleInciName(token = "") {
+  const value = token.trim();
+  if (!value || value.length < 2 || value.length > 140 || looksLikeSentence(value) || containsMarketingWord(value)) {
+    return false;
+  }
+
+  if (!/^[a-z0-9À-ÿ()[\]{}+'./%&\-\s]+$/i.test(value)) {
+    return false;
+  }
+
+  const words = value.split(/\s+/).filter(Boolean);
+  if (words.length > 7) return false;
+
+  return /(?:acid|ate|ide|one|ol|ene|in|um|extract|oil|water|juice|gum|wax|butter|fragrance|parfum|powder|ferment|filtrate|peptide|collagen|ceramide|colorant|ci\s*\d+)$/i.test(value) ||
+    /^[a-z][a-z0-9()+'.\-/]*(?:\s+[a-z0-9][a-z0-9()+'.\-/]*){0,4}$/i.test(value);
+}
+
 function buildVerificationConfidence({ extractionMethod = "", sourceWebsite = "", brand = "", ingredientRows = [] }) {
   let confidence = 0.38;
   const matchedCount = ingredientRows.filter((row) => row.ingredient).length;
@@ -87,6 +104,8 @@ export async function verifyIngredientCandidate(candidate, { productName = "", b
   const matchedRows = ingredientRows.filter((row) => row.ingredient);
   const unknownCount = ingredientRows.length - matchedRows.length;
   const matchRate = matchedRows.length / Math.max(ingredientRows.length, 1);
+  const plausibleUnknownCount = ingredientRows.filter((row) => !row.ingredient && looksLikePlausibleInciName(row.normalizedInput || row.rawName || "")).length;
+  const effectiveInciRate = (matchedRows.length + plausibleUnknownCount * 0.7) / Math.max(ingredientRows.length, 1);
   const supportSignals = {
     hasPreservative: matchedRows.some((row) => row.ingredient.tags?.includes("preservative")),
     hasSolvent: matchedRows.some((row) => row.ingredient.tags?.includes("solvent") || row.ingredient.name === "water"),
@@ -153,7 +172,7 @@ export async function verifyIngredientCandidate(candidate, { productName = "", b
       reason: "The extracted section looks like marketing copy, not a verified INCI ingredient list.",
       rule: "MARKETING_COPY"
     };
-  } else if (matchRate < 0.55) {
+  } else if (effectiveInciRate < 0.55) {
     verification = {
       verified: false,
       ingredientsText: ingredientList.join(", "),
@@ -164,7 +183,7 @@ export async function verifyIngredientCandidate(candidate, { productName = "", b
       aliasMatchedCount,
       matchRate: Number(matchRate.toFixed(2)),
       confidenceScore: 0.2,
-      reason: `Only ${Math.round(matchRate * 100)}% of entries matched known INCI ingredients.`,
+      reason: `Only ${Math.round(effectiveInciRate * 100)}% of entries matched known or plausible INCI ingredients.`,
       rule: "LOW_INCI_MATCH"
     };
   } else if (!supportSignals.hasSolvent && !supportSignals.hasPreservative && !supportSignals.hasSurfactant && !supportSignals.hasEmulsifier && !supportSignals.hasBotanical) {
@@ -266,6 +285,11 @@ export function compareIngredientLists(candidates = []) {
     }
 
     const matchRateBoost = typeof candidate.matchRate === "number" ? candidate.matchRate * 0.18 : 0;
+    const completenessBoost = Math.min(normalized.size, 45) / 100;
+    const label = `${candidate.ingredientSource || ""} ${candidate.metadata?.matchedHeading || ""}`.toLowerCase();
+    const fullFormulaBoost = /\bfull ingredients?\b|\binci\b|\bcomplete ingredients?\b|\bcomposition\b/.test(label) ? 0.16 : 0;
+    const partialFormulaPenalty = /\b(?:key|hero|featured|active) ingredients?\b|\bhighlights?\b/.test(label) ? -0.35 : 0;
+    const truncationPenalty = /\.{3}|…|\betc\.?\s*$/i.test(candidate.rawExtractedIngredients || "") ? -0.22 : 0;
     const sourcePriority = candidate.extractionMethod?.startsWith("official-site")
       ? 0.1
       : candidate.extractionMethod?.startsWith("trusted-database")
@@ -276,7 +300,16 @@ export function compareIngredientLists(candidates = []) {
             ? -0.05
             : 0;
     const rejectionPenalty = candidate.verified ? 0 : -1;
-    const totalScore = overlapScore + (candidate.confidenceScore || 0) + matchRateBoost + sourcePriority + rejectionPenalty;
+    const totalScore =
+      overlapScore +
+      (candidate.confidenceScore || 0) +
+      matchRateBoost +
+      completenessBoost +
+      fullFormulaBoost +
+      partialFormulaPenalty +
+      truncationPenalty +
+      sourcePriority +
+      rejectionPenalty;
 
     if (totalScore > bestScore) {
       best = candidate;

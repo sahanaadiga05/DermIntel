@@ -312,7 +312,7 @@ function createAiTask({ fetched, inputUrl, website, product }) {
   };
 }
 
-async function runParallelStage(taskDefinitions, { parentSignal, timeoutMs = 0 } = {}) {
+async function runParallelStage(taskDefinitions, { parentSignal, timeoutMs = 0, stopOnFirst = true } = {}) {
   if (!taskDefinitions.length) {
     return {
       winner: null,
@@ -394,7 +394,7 @@ async function runParallelStage(taskDefinitions, { parentSignal, timeoutMs = 0 }
             completedLabels.add(task.label);
             settled += 1;
 
-            if (result.candidates.length > 0 && !resolved) {
+            if (stopOnFirst && result.candidates.length > 0 && !resolved) {
               controller.abort(createAbortError(`Resolved by ${task.label}`));
               finish({
                 winner: result,
@@ -406,8 +406,16 @@ async function runParallelStage(taskDefinitions, { parentSignal, timeoutMs = 0 }
             }
 
             if (settled === taskDefinitions.length) {
+              const allCandidates = results.flatMap((entry) => entry.candidates || []);
               finish({
-                winner: null,
+                winner: allCandidates.length
+                  ? createTaskResult("Complete page comparison", {
+                      candidates: allCandidates,
+                      attempts: results.flatMap((entry) => entry.attempts || []),
+                      details: `Compared all ${allCandidates.length} verified ingredient candidates found in this stage.`,
+                      durationMs: Date.now() - stageStartedAt
+                    })
+                  : null,
                 results: [...results],
                 cancelledLabels: [],
                 timedOut: false
@@ -436,8 +444,16 @@ async function runParallelStage(taskDefinitions, { parentSignal, timeoutMs = 0 }
             settled += 1;
 
             if (settled === taskDefinitions.length && !resolved) {
+              const allCandidates = results.flatMap((entry) => entry.candidates || []);
               finish({
-                winner: null,
+                winner: allCandidates.length
+                  ? createTaskResult("Complete page comparison", {
+                      candidates: allCandidates,
+                      attempts: results.flatMap((entry) => entry.attempts || []),
+                      details: `Compared all ${allCandidates.length} verified ingredient candidates found in this stage.`,
+                      durationMs: Date.now() - stageStartedAt
+                    })
+                  : null,
                 results: [...results],
                 cancelledLabels: [],
                 timedOut
@@ -715,7 +731,8 @@ export async function resolveIngredientsForProduct({ inputUrl, website, fetched,
   const stageGroups = [
     {
       tasks: createStageOneTasks({ retailerCandidates, product }),
-      timeoutMs: STAGE_TIMEOUTS.initialExtraction
+      timeoutMs: STAGE_TIMEOUTS.initialExtraction,
+      stopOnFirst: false
     },
     {
       tasks: createStageTwoTasks({ website, product, traceId: traceId || context.traceId }),
@@ -738,7 +755,8 @@ export async function resolveIngredientsForProduct({ inputUrl, website, fetched,
     }
 
     const stageOutcome = await runParallelStage(taskGroup, {
-      timeoutMs: getEffectiveStageTimeout(stageGroup.timeoutMs, resolverStartedAt)
+      timeoutMs: getEffectiveStageTimeout(stageGroup.timeoutMs, resolverStartedAt),
+      stopOnFirst: stageGroup.stopOnFirst !== false
     });
     const orderedResults = taskGroup
       .map(({ label }) => stageOutcome.results.find((result) => result.label === label))

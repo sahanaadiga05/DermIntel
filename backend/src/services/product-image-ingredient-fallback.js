@@ -6,8 +6,9 @@ import { verifyIngredientCandidate } from "../lib/url-analysis/ingredient-verifi
 import { logUrlAnalysis } from "../lib/url-analysis/logger.js";
 import { extractIngredientsFromLabelImage, parseIngredientsFromCommunityText } from "./ocr-service.js";
 
-const MAX_IMAGE_CANDIDATES = 80;
-const OCR_CONCURRENCY = 3;
+const MAX_IMAGE_CANDIDATES = 12;
+const MAX_OCR_IMAGES = 6;
+const OCR_CONCURRENCY = 2;
 const OPENAI_TEXT_MODEL = process.env.OPENAI_OCR_CLEANUP_MODEL || process.env.OPENAI_EXTRACTION_MODEL || "gpt-4.1-mini";
 const OPENAI_BASE_URL = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
 
@@ -106,6 +107,21 @@ function safeUrl(value = "", baseUrl = "") {
   }
 }
 
+function isAmazonUrl(value = "") {
+  try {
+    return /(^|\.)amazon\.(?:in|com|co\.uk|de|fr|it|es|ca|com\.au|co\.jp)$/i.test(new URL(value).hostname);
+  } catch (_error) {
+    return false;
+  }
+}
+
+function throwIfCancelled(signal) {
+  if (!signal?.aborted) return;
+  const error = signal.reason instanceof Error ? signal.reason : new Error("Image collection cancelled.");
+  error.name = "AbortError";
+  throw error;
+}
+
 function parseSrcset(value = "", baseUrl = "") {
   return String(value || "")
     .split(",")
@@ -136,7 +152,8 @@ function isLikelyProductImage(image = {}) {
   const combined = `${url} ${alt} ${className} ${source}`;
 
   if (!/^https?:\/\//i.test(image.url || "")) return false;
-  if (/logo|sprite|placeholder|payment|badge|avatar|loader|tracking|pixel|favicon|swatch|icon-only/.test(combined)) return false;
+  if (/logo|sprite|placeholder|payment|badge|avatar|loader|tracking|pixel|favicon|swatch|icon-only|social.share|advertising|sponsored/.test(combined)) return false;
+  if (/\/dp\/(?:%7b|\{)|social_share=|cm_sw_r_|\/x-locale\/|fls-[a-z0-9.-]*amazon/i.test(url)) return false;
   if (/\.(svg|gif)(?:\?|$)/i.test(url)) return false;
   if (image.width && image.height && image.width < 80 && image.height < 80) return false;
 
@@ -307,9 +324,13 @@ function preferHighestResolutionImages(images = []) {
 }
 
 async function waitForRenderedPage(page, timeoutMs) {
-  await page.waitForLoadState("load", { timeout: Math.min(timeoutMs, 7000) }).catch(() => {});
-  await page.waitForLoadState("networkidle", { timeout: Math.min(timeoutMs, 7000) }).catch(() => {});
-  await page.waitForTimeout(800);
+  const startedAt = Date.now();
+  await page.waitForLoadState("load", { timeout: Math.min(timeoutMs, 3500) }).catch(() => {});
+  const remaining = Math.max(0, timeoutMs - (Date.now() - startedAt));
+  if (remaining > 250) {
+    await page.waitForLoadState("networkidle", { timeout: Math.min(remaining, 1800) }).catch(() => {});
+  }
+  await page.waitForTimeout(Math.min(350, Math.max(0, timeoutMs - (Date.now() - startedAt)))).catch(() => {});
 }
 
 async function autoScrollForLazyImages(page, timeoutMs) {
@@ -390,7 +411,7 @@ async function extractRawImagesFromPage(page, source = "rendered-dom") {
       }
     });
 
-    document.querySelectorAll("*").forEach((node) => {
+    document.querySelectorAll("[style],[data-image],[data-image-url],[data-image-src],[data-zoom-image],[data-old-hires],[data-a-dynamic-image]").forEach((node) => {
       const className = node.className || "";
       const style = `${node.getAttribute("style") || ""} ${getComputedStyle(node).backgroundImage || ""}`;
       for (const match of style.matchAll(/url\(["']?([^"')]+)["']?\)/gi)) {
@@ -420,7 +441,7 @@ async function extractRawImagesFromPage(page, source = "rendered-dom") {
       }
     });
 
-    document.querySelectorAll("script[type='application/ld+json'],script#__NEXT_DATA__,script").forEach((script) => {
+    document.querySelectorAll("script[type='application/ld+json'],script#__NEXT_DATA__,script#__NUXT_DATA__").forEach((script) => {
       output.push({
         url: `__SCRIPT_TEXT__${script.textContent || ""}`,
         alt: "embedded product json",
@@ -438,21 +459,12 @@ async function extractRawImagesFromPage(page, source = "rendered-dom") {
       "productData", "ProductData", "pdpData", "__PRODUCT__"
     ]);
 
-    try {
-      Object.keys(window)
-        .filter((key) => /product|pdp|gallery|image|media|variant|carousel/i.test(key))
-        .slice(0, 80)
-        .forEach((key) => globalKeys.add(key));
-    } catch (_error) {
-      // Ignore protected global enumeration.
-    }
-
     for (const globalKey of globalKeys) {
       try {
         const value = window[globalKey];
         if (value) {
           output.push({
-            url: `__SCRIPT_TEXT__${JSON.stringify(value).slice(0, 700000)}`,
+            url: `__SCRIPT_TEXT__${JSON.stringify(value).slice(0, 120000)}`,
             alt: globalKey,
             className: globalKey,
             width: 0,
@@ -468,6 +480,78 @@ async function extractRawImagesFromPage(page, source = "rendered-dom") {
 
     return output;
   }, source).catch(() => []);
+}
+
+async function extractPriorityProductImages(page, inputUrl, source = "product-gallery") {
+  const amazon = isAmazonUrl(inputUrl);
+  return page.evaluate(({ sourceLabel, amazonPage }) => {
+    const selectors = amazonPage
+      ? [
+          "#landingImage",
+          "#imgTagWrapperId img",
+          "#main-image-container img",
+          "#altImages img",
+          "#imageBlock_feature_div img",
+          "[data-a-dynamic-image]"
+        ]
+      : [
+          "[data-testid*='product' i] img",
+          "[class*='product-gallery' i] img",
+          "[class*='product-media' i] img",
+          "[class*='pdp' i] [class*='gallery' i] img",
+          "[id*='product' i] [class*='gallery' i] img",
+          "[data-zoom-image]",
+          "[data-old-hires]"
+        ];
+    const output = [];
+    const seenNodes = new Set();
+    const attributes = [
+      "src", "srcset", "data-src", "data-srcset", "data-old-hires", "data-zoom-image",
+      "data-large-image", "data-a-dynamic-image"
+    ];
+
+    for (const selector of selectors) {
+      document.querySelectorAll(selector).forEach((node) => {
+        if (seenNodes.has(node)) return;
+        seenNodes.add(node);
+        const meta = {
+          alt: node.getAttribute("alt") || node.getAttribute("aria-label") || "",
+          className: `${node.className || ""} priority-product-gallery`,
+          width: Number(node.naturalWidth || node.width || node.getAttribute("width") || 0),
+          height: Number(node.naturalHeight || node.height || node.getAttribute("height") || 0),
+          source: sourceLabel
+        };
+        const current = node.currentSrc || node.src;
+        if (current) output.push({ ...meta, url: current, sourceDetail: "currentSrc" });
+        for (const attribute of attributes) {
+          const value = node.getAttribute(attribute);
+          if (value) output.push({ ...meta, url: value, sourceDetail: attribute });
+        }
+      });
+    }
+
+    return output;
+  }, { sourceLabel: source, amazonPage: amazon }).catch(() => []);
+}
+
+async function collectPriorityGalleryImages(page, inputUrl, timeoutMs, signal) {
+  const startedAt = Date.now();
+  const collected = [];
+  const selector = isAmazonUrl(inputUrl)
+    ? "#altImages li img"
+    : "[class*='product-gallery' i] [class*='thumb' i], [class*='product-gallery' i] button:has(img), [class*='pdp' i] [class*='thumb' i]";
+  const handles = await page.$$(selector).catch(() => []);
+
+  for (const handle of handles.slice(0, 10)) {
+    if (Date.now() - startedAt >= timeoutMs) break;
+    throwIfCancelled(signal);
+    await handle.scrollIntoViewIfNeeded().catch(() => {});
+    await handle.click({ timeout: 700, force: true }).catch(() => {});
+    await page.waitForTimeout(120).catch(() => {});
+    collected.push(...await extractPriorityProductImages(page, inputUrl, "product-gallery:thumbnail-click"));
+  }
+
+  return collected;
 }
 
 async function scrollGalleryContainers(page, timeoutMs) {
@@ -587,7 +671,17 @@ async function collectImagesAfterThumbnailClicks(page, timeoutMs) {
 }
 export function normalizeAndSelectImages(rawImages = [], baseUrl = "") {
   const normalized = rawImages.flatMap((image) => expandImageCandidate(image, baseUrl));
-  const filtered = normalized.filter(isLikelyProductImage);
+  const filtered = normalized.filter((image) => {
+    if (!isLikelyProductImage(image)) return false;
+    if (!isAmazonUrl(baseUrl)) return true;
+
+    try {
+      const host = new URL(image.url).hostname.toLowerCase();
+      return /(^|\.)m\.media-amazon\.com$|(^|\.)images-(?:na|eu|fe)\.ssl-images-amazon\.com$|(^|\.)images\.amazon\.com$/.test(host);
+    } catch (_error) {
+      return false;
+    }
+  });
   return rankImageCandidates(preferHighestResolutionImages(filtered)).slice(0, MAX_IMAGE_CANDIDATES);
 }
 
@@ -674,8 +768,10 @@ function formatImageCollectionError(error) {
 export async function collectProductImageUrlsWithPlaywright({ inputUrl, timeoutMs = 12000, signal } = {}) {
   let browser = null;
   let page = null;
+  let abortHandler = null;
   const networkImages = [];
   const startedAt = Date.now();
+  const remainingTime = () => Math.max(0, timeoutMs - (Date.now() - startedAt));
   const collectionDebug = {
     inputUrl,
     timeoutMs,
@@ -709,6 +805,11 @@ export async function collectProductImageUrlsWithPlaywright({ inputUrl, timeoutM
       viewport: { width: 1365, height: 1100 },
       userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
     });
+    abortHandler = () => {
+      page?.close().catch(() => {});
+      browser?.close().catch(() => {});
+    };
+    signal?.addEventListener("abort", abortHandler, { once: true });
 
     page.on("response", (response) => {
       const url = response.url();
@@ -727,27 +828,54 @@ export async function collectProductImageUrlsWithPlaywright({ inputUrl, timeoutM
 
     const navigationResponse = await page.goto(inputUrl, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     collectionDebug.navigationStatus = navigationResponse?.status?.() || null;
-    await waitForRenderedPage(page, timeoutMs);
+    await waitForRenderedPage(page, Math.max(1, remainingTime()));
+    throwIfCancelled(signal);
 
     Object.assign(collectionDebug, await getPageCollectionDiagnostics(page, inputUrl));
+    throwIfCancelled(signal);
 
-    const firstPass = await extractRawImagesFromPage(page, "rendered-dom:first-pass");
-    const galleryScrollBeforeClicks = await scrollGalleryContainers(page, Math.max(2200, timeoutMs - (Date.now() - startedAt)));
-    await autoScrollForLazyImages(page, Math.max(2500, timeoutMs - (Date.now() - startedAt)));
-    const afterScroll = await extractRawImagesFromPage(page, "rendered-dom:after-scroll");
-    const afterClicks = await collectImagesAfterThumbnailClicks(page, Math.max(3000, timeoutMs - (Date.now() - startedAt)));
-    const galleryScrollAfterClicks = await scrollGalleryContainers(page, Math.max(1800, timeoutMs - (Date.now() - startedAt)));
-    const finalPass = await extractRawImagesFromPage(page, "rendered-dom:final-pass");
+    const priorityFirstPass = await extractPriorityProductImages(page, inputUrl, "product-gallery:first-pass");
+    const priorityGalleryClicks = await collectPriorityGalleryImages(
+      page,
+      inputUrl,
+      Math.min(3000, remainingTime()),
+      signal
+    );
+    const priorityImages = [...priorityFirstPass, ...priorityGalleryClicks];
+    const prioritySelection = normalizeAndSelectImages(priorityImages, page.url());
+    const usePriorityCollection = prioritySelection.length >= 2 || (isAmazonUrl(inputUrl) && prioritySelection.length > 0);
 
-    const rawImages = [
-      ...networkImages,
-      ...firstPass,
-      ...galleryScrollBeforeClicks,
-      ...afterScroll,
-      ...afterClicks,
-      ...galleryScrollAfterClicks,
-      ...finalPass
-    ];
+    let firstPass = [];
+    let galleryScrollBeforeClicks = [];
+    let afterScroll = [];
+    let afterClicks = [];
+    let galleryScrollAfterClicks = [];
+    let finalPass = [];
+
+    if (!usePriorityCollection) {
+      throwIfCancelled(signal);
+      firstPass = await extractRawImagesFromPage(page, "rendered-dom:first-pass");
+      galleryScrollBeforeClicks = await scrollGalleryContainers(page, Math.min(1800, remainingTime()));
+      throwIfCancelled(signal);
+      await autoScrollForLazyImages(page, Math.min(1800, remainingTime()));
+      afterScroll = await extractRawImagesFromPage(page, "rendered-dom:after-scroll");
+      afterClicks = await collectImagesAfterThumbnailClicks(page, Math.min(2200, remainingTime()));
+      galleryScrollAfterClicks = await scrollGalleryContainers(page, Math.min(1200, remainingTime()));
+      finalPass = await extractRawImagesFromPage(page, "rendered-dom:final-pass");
+    }
+
+    throwIfCancelled(signal);
+    const rawImages = usePriorityCollection
+      ? priorityImages
+      : [
+          ...networkImages.slice(0, 600),
+          ...firstPass,
+          ...galleryScrollBeforeClicks,
+          ...afterScroll,
+          ...afterClicks,
+          ...galleryScrollAfterClicks,
+          ...finalPass
+        ].slice(0, 3000);
 
     const images = normalizeAndSelectImages(rawImages, page.url());
 
@@ -765,6 +893,9 @@ export async function collectProductImageUrlsWithPlaywright({ inputUrl, timeoutM
 
     Object.assign(collectionDebug, {
       rawCounts: {
+        collectionMode: usePriorityCollection ? "priority-gallery" : "broad-fallback",
+        priorityFirstPass: priorityFirstPass.length,
+        priorityGalleryClicks: priorityGalleryClicks.length,
         networkImages: networkImages.length,
         firstPass: firstPass.length,
         galleryScrollBeforeClicks: galleryScrollBeforeClicks.length,
@@ -839,6 +970,9 @@ export async function collectProductImageUrlsWithPlaywright({ inputUrl, timeoutM
     });
     return attachCollectionDebug([], collectionDebug);
   } finally {
+    if (abortHandler) {
+      signal?.removeEventListener("abort", abortHandler);
+    }
     try {
       if (page && !page.isClosed()) await page.close();
     } catch (_error) {
@@ -1290,10 +1424,11 @@ export async function searchProductImagesForIngredients({
 
   const collectedImages = await collectImagesFn({
     inputUrl,
-    timeoutMs: 15000,
+    timeoutMs: 8000,
     signal
   });
-  const images = collectedImages.map((image, index) => ({
+  throwIfCancelled(signal);
+  const images = collectedImages.slice(0, MAX_OCR_IMAGES).map((image, index) => ({
     ...image,
     imageNumber: index + 1
   }));
@@ -1302,7 +1437,7 @@ export async function searchProductImagesForIngredients({
     enumerable: false
   });
 
-  report.imageCount = images.length;
+  report.imageCount = collectedImages.length;
   report.imageUrls = images.map(summarizeImageForDiagnostics);
   report.imageCollectionDebug = images.collectionDebug || null;
 
@@ -1320,10 +1455,13 @@ export async function searchProductImagesForIngredients({
   }
 
   let debugDownloads = { folder: "", downloads: [] };
-  const shouldDownloadDebugImages = ocrFn === extractIngredientsFromLabelImage && process.env.DERMINTEL_SKIP_DEBUG_IMAGE_DOWNLOADS !== "true";
+  const shouldDownloadDebugImages =
+    ocrFn === extractIngredientsFromLabelImage &&
+    process.env.DERMINTEL_DEBUG_IMAGE_DOWNLOADS === "true";
 
   if (shouldDownloadDebugImages) {
     debugDownloads = await downloadImagesForDebug(images, { inputUrl, traceId });
+    throwIfCancelled(signal);
     report.debugImageFolder = debugDownloads.folder;
     report.debugImageDownloads = debugDownloads.downloads.map(sanitizeDebugDownload);
     logUrlAnalysis("product-image-debug-downloads", {
@@ -1405,8 +1543,8 @@ export async function searchProductImagesForIngredients({
   if (!bestOcr) {
     const keywordImageCount = report.ocrDiagnostics.filter((item) => item.ingredientKeywordsDetected).length;
     report.lastReason = keywordImageCount
-      ? `OCR scanned ${images.length} product image${images.length === 1 ? "" : "s"}; ${keywordImageCount} image${keywordImageCount === 1 ? "" : "s"} had ingredient keywords, but none passed full-label verification.`
-      : `OCR scanned ${images.length} product image${images.length === 1 ? "" : "s"}, but none contained ingredient-label text.`;
+      ? `OCR scanned ${images.length} high-priority product image${images.length === 1 ? "" : "s"}; ${keywordImageCount} image${keywordImageCount === 1 ? "" : "s"} had ingredient keywords, but none passed full-label verification.`
+      : `OCR scanned ${images.length} high-priority product image${images.length === 1 ? "" : "s"}, but none contained ingredient-label text.`;
     return { candidates, attempts, report };
   }
 

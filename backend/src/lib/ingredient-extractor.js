@@ -147,6 +147,41 @@ function extractMetaBrand(html = "") {
   );
 }
 
+const RETAILER_BRAND_NAMES = new Set([
+  "amazon",
+  "amazon in",
+  "myntra",
+  "nykaa",
+  "flipkart",
+  "meesho",
+  "ajio"
+]);
+
+function cleanRetailerBrand(value = "") {
+  const cleaned = normalizeWhitespace(stripHtml(value))
+    .replace(/^(?:visit|shop)\s+(?:the\s+)?/i, "")
+    .replace(/^(?:brand|manufacturer)\s*[:\-]\s*/i, "")
+    .replace(/\s+(?:official\s+)?store$/i, "")
+    .trim();
+  return RETAILER_BRAND_NAMES.has(cleaned.toLowerCase()) ? "" : cleaned;
+}
+
+function extractRetailerBrand(html = "") {
+  const patterns = [
+    /<(?:a|span)[^>]+id=["']bylineInfo["'][^>]*>([\s\S]{1,180}?)<\/(?:a|span)>/i,
+    /<(?:a|span)[^>]+class=["'][^"']*(?:brand|manufacturer)[^"']*["'][^>]*>([\s\S]{1,180}?)<\/(?:a|span)>/i,
+    /data-brand-name=["']([^"']{1,120})["']/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    const brand = cleanRetailerBrand(match?.[1] || "");
+    if (brand) return brand;
+  }
+
+  return "";
+}
+
 function extractBreadcrumbName(html = "") {
   const matches = html.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi) || [];
 
@@ -250,23 +285,28 @@ function looksLikeIngredientList(value = "") {
 function scoreIngredientCandidate(candidate) {
   const label = `${candidate.ingredientSource || ""} ${candidate.metadata?.matchedHeading || ""} ${candidate.metadata?.sourceBlock || ""}`.toLowerCase();
   const count = candidate.parsedIngredientList?.length || 0;
-  let score = Math.min(count, 30);
+  const raw = candidate.rawExtractedIngredients || "";
+  let score = Math.min(count, 60) * 1.5;
 
   if (/full ingredients?|inci|complete ingredients?|composition/.test(label)) {
-    score += 40;
+    score += 55;
   }
 
   if (/ingredients?/.test(label)) {
-    score += 12;
+    score += 18;
   }
 
   if (/key ingredients?|hero ingredients?|benefits|why/.test(label)) {
-    score -= 35;
+    score -= 80;
   }
 
   if (count < 8) {
-    score -= 20;
+    score -= 45;
   }
+
+  if (candidate.extractionMethod === "dom-table") score += 18;
+  if (candidate.extractionMethod === "dom-container") score += 10;
+  if (/\.{3}|…|\betc\.?\s*$/i.test(raw)) score -= 35;
 
   return score;
 }
@@ -372,6 +412,7 @@ export async function extractProductInfo(html = "", fallbackName = "", siteHints
   const headingTitle = extractHeadingTitle(html);
   const breadcrumbName = extractBreadcrumbName(html);
   const metaBrand = extractMetaBrand(html);
+  const retailerBrand = extractRetailerBrand(html);
   const rawName = chooseReliableText([
     { value: jsonLd?.name, weight: 45 },
     { value: structured?.name, weight: 42 },
@@ -380,7 +421,16 @@ export async function extractProductInfo(html = "", fallbackName = "", siteHints
     { value: breadcrumbName, weight: 22 },
     { value: fallbackName, weight: 8 }
   ]) || fallbackName;
-  const brand = normalizeWhitespace(jsonLd?.brand || structured?.brand || metaBrand || siteHints.brandHint || detectBrand(rawName, title, description));
+  const brandCandidates = [
+    jsonLd?.brand,
+    structured?.brand,
+    retailerBrand,
+    metaBrand,
+    siteHints.brandHint
+  ]
+    .map((candidate) => cleanRetailerBrand(candidate || ""))
+    .filter(Boolean);
+  const brand = normalizeWhitespace(brandCandidates[0] || detectBrand(rawName, title, description));
   const category = detectCategory(rawName, description, siteHints.categoryHint || "");
   const normalizedName = normalizeProductName(rawName);
   const canonicalName = extractCoreProductName(rawName, { brand, category });

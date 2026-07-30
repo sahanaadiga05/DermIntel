@@ -129,7 +129,14 @@ export async function normalizeIngredientCandidate(candidate = {}) {
     }
   }
 
-  const canonicalIngredientList = [...new Map(normalizedRows.map((row) => [getLookupKey(row.canonicalName), row.canonicalName])).values()];
+  const canonicalIngredientList = [...new Map(normalizedRows.map((row) => {
+    // Fuzzy matches are useful for safety scoring, but must never rename or
+    // collapse distinct ingredients in the formula shown to the user.
+    const outputName = row.matchType === "fuzzy" || row.matchType === "unknown"
+      ? row.normalizedInput
+      : row.canonicalName;
+    return [getLookupKey(outputName), outputName];
+  })).values()];
 
   return {
     ...candidate,

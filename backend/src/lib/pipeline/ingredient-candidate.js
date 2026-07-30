@@ -1,6 +1,20 @@
 ﻿import { randomUUID } from "node:crypto";
 import { splitAndNormalizeIngredients } from "../formula-analysis/ingredient-normalizer.js";
 
+function normalizeIngredientSeparators(value = "") {
+  return String(value)
+    .replace(/<br\s*\/?>/gi, ", ")
+    .replace(/<\/(?:li|p|div|dd|tr)>/gi, ", ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+(?:&|\(and\)|and)\s+/gi, ", ")
+    .replace(/[\r\n|•·▪◦]+/g, ", ")
+    .replace(/(?:,\s*){2,}/g, ", ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function createIngredientCandidate({
   sourceUrl = "",
   sourceWebsite = "",
@@ -12,7 +26,8 @@ export function createIngredientCandidate({
   metadata = {},
   product = null
 } = {}) {
-  const parsedIngredientList = splitAndNormalizeIngredients(rawExtractedIngredients);
+  const normalizedIngredients = normalizeIngredientSeparators(rawExtractedIngredients);
+  const parsedIngredientList = splitAndNormalizeIngredients(normalizedIngredients);
 
   return {
     id: randomUUID(),
@@ -22,7 +37,7 @@ export function createIngredientCandidate({
     extractionMethod,
     ingredientSource: ingredientSource || sourceWebsite || stage,
     sourceKind,
-    rawExtractedIngredients,
+    rawExtractedIngredients: normalizedIngredients,
     parsedIngredientList,
     ingredientCount: parsedIngredientList.length,
     product,

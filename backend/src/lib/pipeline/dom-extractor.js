@@ -16,204 +16,242 @@ async function getCheerio() {
   return cheerioModule;
 }
 
-const HEADING_PATTERNS = [
-  /ingredients?/i,
-  /ingredient list/i,
-  /full ingredients?/i,
-  /composition/i,
-  /contains/i,
-  /inci/i
-];
+const HEADING_PATTERN = /\b(?:full\s+)?ingredients?(?:\s+list)?\b|\binci\b|\bcomposition\b|\bwhat(?:'s| is)\s+inside\b/i;
+const PARTIAL_PATTERN = /\b(?:key|hero|featured|active)\s+ingredients?\b|\bhighlights?\b|\bbenefits?\b/i;
+const STOP_PATTERN = /\b(?:directions?|how to use|usage|warnings?|caution|benefits?|description|reviews?|shipping|returns?|faq|about)\b/i;
+const CONTENT_SELECTORS = [
+  "[data-ingredients]",
+  "[data-inci]",
+  "[data-composition]",
+  "[data-full-ingredients]",
+  "[itemprop='ingredients']",
+  "[itemprop='ingredient']",
+  "[class*='ingredient' i]",
+  "[id*='ingredient' i]",
+  "[class*='inci' i]",
+  "[id*='inci' i]",
+  "[class*='composition' i]",
+  "[id*='composition' i]"
+].join(",");
 
 function cleanText(value = "") {
-  return value
-    .replace(/\s+/g, " ")
+  return String(value)
     .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\s*([,;|•·])\s*/g, "$1 ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeKey(value = "") {
+  return cleanText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function trimIngredientBlock(value = "") {
+  return cleanText(value)
+    .split(/\b(?:please be aware|for refilled products|actual product packaging|ingredient lists? (?:for|may|can|are)|directions?|how to use|usage|warnings?|caution|reviews?|shipping|returns?)\b/i)[0]
+    .replace(/^(?:full\s+)?ingredients?(?:\s+list)?\s*:?\s*/i, "")
+    .replace(/[,\s]+$/, "")
     .trim();
 }
 
 function looksUseful(text = "") {
   const normalized = cleanText(text);
-  return normalized.length >= 24 && /[,;]|\bwater\b|\baqua\b|\bglycerin\b|\bextract\b/i.test(normalized);
+  if (normalized.length < 20 || PARTIAL_PATTERN.test(normalized.slice(0, 100))) {
+    return false;
+  }
+
+  const separators = (normalized.match(/[,;|•·]/g) || []).length;
+  const ingredientSignals = (normalized.match(/\b(?:aqua|water|glycerin|glycol|acid|extract|oil|alcohol|sodium|potassium|fragrance|parfum)\b/gi) || []).length;
+  return separators >= 2 || ingredientSignals >= 3;
+}
+
+function textWithSeparators($, element) {
+  const clone = $(element).clone();
+  clone.find("script,style,noscript,svg,button").remove();
+  clone.find("br").replaceWith(", ");
+  clone.find("li").each((_, item) => {
+    $(item).append(", ");
+  });
+  clone.find("p,dd,tr").each((_, item) => {
+    $(item).append(" ");
+  });
+  return cleanText(clone.text()).replace(/(?:,\s*){2,}/g, ", ").replace(/,\s*$/, "");
+}
+
+function controlledContent($, element) {
+  const base = $(element);
+  const ids = [
+    base.attr("aria-controls"),
+    (base.attr("href") || "").startsWith("#") ? base.attr("href").slice(1) : "",
+    (base.attr("data-target") || "").replace(/^#/, "")
+  ].filter(Boolean);
+
+  return ids
+    .map((id) => $(`#${CSS_ESCAPE(id)}`).first())
+    .filter((entry) => entry.length)
+    .map((entry) => textWithSeparators($, entry))
+    .filter(looksUseful);
+}
+
+function CSS_ESCAPE(value = "") {
+  return String(value).replace(/([ #;?%&,.+*~':"!^$[\]()=>|/@])/g, "\\$1");
+}
+
+function siblingContent($, element) {
+  const values = [];
+  let sibling = $(element).next();
+  let inspected = 0;
+
+  while (sibling.length && inspected < 6) {
+    const tagName = String(sibling[0]?.tagName || "").toLowerCase();
+    const text = textWithSeparators($, sibling);
+    if (/^h[1-6]$/.test(tagName) || (text.length < 90 && STOP_PATTERN.test(text))) {
+      break;
+    }
+    if (looksUseful(text)) {
+      values.push(text);
+    }
+    sibling = sibling.next();
+    inspected += 1;
+  }
+
+  return values;
 }
 
 function getClosestContent($, element) {
-  const candidates = [];
   const base = $(element);
-  const neighbors = [
-    base.next(),
-    base.parent().next(),
-    base.closest("details,section,article,div,li,td,tr").find(".accordion-content,.tab-content,[role='tabpanel'],dd,p,div,span,li").first(),
-    base.closest("details,section,article,div,li,td,tr").next()
-  ].filter((entry) => entry && entry.length);
+  const values = [
+    ...controlledContent($, element),
+    ...siblingContent($, element)
+  ];
 
-  for (const candidate of neighbors) {
-    const text = cleanText(candidate.text());
-    if (looksUseful(text)) {
-      candidates.push(text);
-    }
+  const details = base.closest("details");
+  if (details.length) {
+    const detailText = textWithSeparators($, details.clone().find("summary").remove().end());
+    if (looksUseful(detailText)) values.push(detailText);
   }
 
-  return candidates;
+  const region = base.closest("section,article,[role='tabpanel'],.accordion-item,.accordion__item,.product-accordion,.tab-pane,div");
+  if (region.length) {
+    const regionClone = region.clone();
+    regionClone.find("h1,h2,h3,h4,h5,h6,summary,button").first().remove();
+    const regionText = textWithSeparators($, regionClone);
+    if (looksUseful(regionText)) values.push(regionText);
+  }
+
+  return [...new Map(values.map((value) => [normalizeKey(value), value])).values()];
 }
 
 function findHeadingCandidates($) {
   const hits = [];
-
-  $("h1,h2,h3,h4,h5,h6,strong,b,summary,button,dt,th,span,div,p,li,a").each((_, element) => {
+  $("h1,h2,h3,h4,h5,h6,strong,b,summary,button,dt,th,[role='tab'],[role='button'],label").each((_, element) => {
     const text = cleanText($(element).text());
-    if (!text || text.length > 80) {
+    if (!text || text.length > 100 || !HEADING_PATTERN.test(text) || PARTIAL_PATTERN.test(text)) {
       return;
     }
-
-    if (HEADING_PATTERNS.some((pattern) => pattern.test(text))) {
-      hits.push({
-        text,
-        values: getClosestContent($, element)
-      });
-    }
+    hits.push({ text, values: getClosestContent($, element) });
   });
-
   return hits;
 }
 
-function collectDatasetValues($) {
+function collectAttributeValues($) {
   const results = [];
-
-  $("[data-ingredients],[data-inci],[data-composition],[data-full-ingredients]").each((_, element) => {
-    for (const attribute of Object.keys(element.attribs || {})) {
-      if (/data-(ingredients|inci|composition|full-ingredients)/i.test(attribute)) {
-        const value = cleanText(element.attribs[attribute] || "");
-        if (looksUseful(value)) {
-          results.push({
-            label: attribute,
-            value
-          });
-        }
-      }
+  $("*").each((_, element) => {
+    for (const [attribute, rawValue] of Object.entries(element.attribs || {})) {
+      if (!/(?:^|[-_:])(ingredients?|inci|composition)(?:$|[-_:])/i.test(attribute)) continue;
+      const value = cleanText(rawValue || "");
+      if (looksUseful(value)) results.push({ label: attribute, value });
     }
   });
+  return results;
+}
 
+function collectDirectContainers($) {
+  const results = [];
+  $(CONTENT_SELECTORS).each((_, element) => {
+    const node = $(element);
+    const label = cleanText([
+      node.attr("id"),
+      node.attr("class"),
+      node.attr("itemprop"),
+      node.attr("aria-label"),
+      node.attr("data-title")
+    ].filter(Boolean).join(" "));
+    if (PARTIAL_PATTERN.test(label)) return;
+
+    const value = node.attr("content") || textWithSeparators($, element);
+    if (looksUseful(value)) results.push({ label: label || "ingredient-container", value });
+  });
+  return results;
+}
+
+function collectMetaValues($) {
+  const results = [];
+  $("meta").each((_, element) => {
+    const label = cleanText(`${$(element).attr("name") || ""} ${$(element).attr("property") || ""} ${$(element).attr("itemprop") || ""}`);
+    const value = cleanText($(element).attr("content") || "");
+    if (HEADING_PATTERN.test(label) && !PARTIAL_PATTERN.test(label) && looksUseful(value)) {
+      results.push({ label, value });
+    }
+  });
   return results;
 }
 
 function collectIngredientTableValues($) {
   const results = [];
-
   $("table").each((_, table) => {
+    const headerCells = $(table).find("tr").first().find("th,td").toArray();
+    const ingredientColumn = headerCells.findIndex((cell) => /\bingredients?\b|\binci\b/i.test(cleanText($(cell).text())));
+    if (ingredientColumn < 0) return;
+
     const rows = [];
-    const headers = $(table)
-      .find("tr")
-      .first()
-      .find("th,td")
-      .map((__, cell) => cleanText($(cell).text()).toLowerCase())
-      .get();
+    $(table).find("tr").slice(1).each((__, row) => {
+      const cells = $(row).find("th,td");
+      const ingredient = cleanText(cells.eq(ingredientColumn).text());
+      if (ingredient && !HEADING_PATTERN.test(ingredient)) rows.push(ingredient);
+    });
 
-    if (!headers.some((header) => /^ingredients?$/.test(header))) {
-      return;
-    }
-
-    $(table)
-      .find("tr")
-      .slice(1)
-      .each((__, row) => {
-        const ingredient = cleanText($(row).find("th,td").first().text());
-        if (ingredient && !/^ingredients?$/i.test(ingredient)) {
-          rows.push(ingredient);
-        }
-      });
-
-    if (rows.length >= 8) {
-      results.push({
-        label: "ingredient-table",
-        value: rows.join(", ")
-      });
-    }
+    if (rows.length >= 3) results.push({ label: "ingredient-table", value: rows.join(", ") });
   });
-
   return results;
 }
 
 export async function extractDomIngredientCandidates({ html = "", sourceUrl = "", sourceWebsite = "", product = null }) {
   const cheerio = await getCheerio();
-  if (!cheerio?.load || !html) {
-    return [];
-  }
+  if (!cheerio?.load || !html) return [];
 
   const $ = cheerio.load(html);
+  $("script,style,noscript,svg,nav,footer").remove();
   const candidates = [];
   const seen = new Set();
 
+  const addCandidate = (label, value, extractionMethod) => {
+    const trimmedValue = trimIngredientBlock(value);
+    const key = normalizeKey(trimmedValue);
+    if (!key || seen.has(key) || !looksUseful(trimmedValue)) return;
+    seen.add(key);
+    candidates.push(createIngredientCandidate({
+      sourceUrl,
+      sourceWebsite,
+      stage: "retailer-page",
+      extractionMethod,
+      ingredientSource: label,
+      rawExtractedIngredients: trimmedValue,
+      metadata: { matchedHeading: label },
+      product
+    }));
+  };
+
   for (const hit of findHeadingCandidates($)) {
-    for (const value of hit.values) {
-      const key = `${hit.text}:${value}`;
-      if (seen.has(key)) {
-        continue;
-      }
-
-      seen.add(key);
-      candidates.push(
-        createIngredientCandidate({
-          sourceUrl,
-          sourceWebsite,
-          stage: "retailer-page",
-          extractionMethod: "dom-heading",
-          ingredientSource: hit.text,
-          rawExtractedIngredients: value,
-          metadata: {
-            matchedHeading: hit.text
-          },
-          product
-        })
-      );
-    }
+    for (const value of hit.values) addCandidate(hit.text, value, "dom-heading");
   }
-
-  for (const dataset of collectDatasetValues($)) {
-    const key = `${dataset.label}:${dataset.value}`;
-    if (seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    candidates.push(
-      createIngredientCandidate({
-        sourceUrl,
-        sourceWebsite,
-        stage: "retailer-page",
-        extractionMethod: "dom-dataset",
-        ingredientSource: dataset.label,
-        rawExtractedIngredients: dataset.value,
-        metadata: {
-          matchedHeading: dataset.label
-        },
-        product
-      })
-    );
-  }
-
-  for (const table of collectIngredientTableValues($)) {
-    const key = `${table.label}:${table.value}`;
-    if (seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    candidates.push(
-      createIngredientCandidate({
-        sourceUrl,
-        sourceWebsite,
-        stage: "retailer-page",
-        extractionMethod: "dom-table",
-        ingredientSource: table.label,
-        rawExtractedIngredients: table.value,
-        metadata: {
-          matchedHeading: table.label
-        },
-        product
-      })
-    );
-  }
+  for (const item of collectDirectContainers($)) addCandidate(item.label, item.value, "dom-container");
+  for (const item of collectAttributeValues($)) addCandidate(item.label, item.value, "dom-dataset");
+  for (const item of collectMetaValues($)) addCandidate(item.label, item.value, "dom-meta");
+  for (const item of collectIngredientTableValues($)) addCandidate(item.label, item.value, "dom-table");
 
   return candidates;
 }

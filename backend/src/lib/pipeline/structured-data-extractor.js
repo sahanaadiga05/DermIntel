@@ -3,8 +3,44 @@ import { createIngredientCandidate } from "./ingredient-candidate.js";
 
 function cleanText(value = "") {
   return String(value)
+    .replace(/<br\s*\/?>/gi, ", ")
+    .replace(/<\/(?:p|li|div|dd|tr)>/gi, ", ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+const INGREDIENT_KEY_PATTERN = /(?:^|[_\-.])(?:full[_\-.]?)?(?:ingredients?|inci|composition|materials?)(?:$|[_\-.])/i;
+const PARTIAL_KEY_PATTERN = /(?:key|hero|featured|active|highlight)[_\-.]?(?:ingredients?)?/i;
+
+function serializeIngredientValue(value) {
+  if (typeof value === "string" || typeof value === "number") {
+    return cleanText(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((entry) => {
+        if (typeof entry === "string") return [cleanText(entry)];
+        if (entry && typeof entry === "object") {
+          const name = entry.name || entry.ingredient || entry.inci || entry.value || entry.label;
+          return name ? [cleanText(name)] : [];
+        }
+        return [];
+      })
+      .filter(Boolean)
+      .join(", ");
+  }
+
+  if (value && typeof value === "object") {
+    return serializeIngredientValue(value.value || value.text || value.name || value.ingredients || value.inci || "");
+  }
+
+  return "";
 }
 
 function extractJsonScripts(html = "") {
@@ -46,13 +82,33 @@ function flattenObject(value, path = [], bucket = []) {
 }
 
 function findIngredientValues(payload) {
-  return flattenObject(payload)
-    .filter((entry) => /ingredient|inci|composition|material/i.test(entry.key))
-    .map((entry) => ({
-      path: entry.path,
-      value: Array.isArray(entry.value) ? entry.value.join(", ") : cleanText(entry.value)
-    }))
-    .filter((entry) => entry.value && entry.value.length >= 12);
+  const flattened = flattenObject(payload);
+  const results = [];
+
+  for (const entry of flattened) {
+    if (INGREDIENT_KEY_PATTERN.test(entry.key) && !PARTIAL_KEY_PATTERN.test(entry.key)) {
+      const value = serializeIngredientValue(entry.value);
+      if (value.length >= 12) results.push({ path: entry.path, value });
+    }
+
+    if (/^(?:name|label|title|key)$/i.test(entry.key) && /^(?:full\s+)?ingredients?(?:\s+list)?$|^inci$|^composition$/i.test(cleanText(entry.value))) {
+      const parentPath = entry.path.split(".").slice(0, -1).join(".");
+      const sibling = flattened.find((candidate) =>
+        candidate.path.startsWith(`${parentPath}.`) &&
+        /^(?:value|text|content|description|body|html)$/i.test(candidate.key)
+      );
+      const value = serializeIngredientValue(sibling?.value);
+      if (value.length >= 12) results.push({ path: sibling.path, value });
+    }
+
+    if (/^(?:description|descriptionHtml|body_html|content|details)$/i.test(entry.key)) {
+      const text = cleanText(entry.value);
+      const match = text.match(/(?:full\s+)?ingredients?(?:\s+list)?\s*:?\s*([\s\S]{20,4000}?)(?=\b(?:directions?|how to use|warnings?|benefits?|reviews?)\b|$)/i);
+      if (match?.[1]) results.push({ path: entry.path, value: cleanText(match[1]) });
+    }
+  }
+
+  return [...new Map(results.map((entry) => [`${entry.path}:${entry.value}`, entry])).values()];
 }
 
 function findProductValues(payload) {
