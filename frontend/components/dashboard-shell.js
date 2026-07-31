@@ -59,52 +59,8 @@ export function DashboardShell() {
     };
   }, [result]);
 
-  const personalizedVerdictDetails = useMemo(() => {
-    if (!analysisMeta) {
-      return [];
-    }
-
-    const formatDetailValue = (value) =>
-      String(value || "")
-        .replace(/[_-]+/g, " ")
-        .replace(/\s+/g, " ")
-        .trim()
-        .replace(/\b\w/g, (letter) => letter.toUpperCase());
-
-    return [
-      analysisMeta.sourceUrl
-        ? {
-            label: "Source URL",
-            value: formatUrlForDisplay(analysisMeta.sourceUrl),
-            href: analysisMeta.sourceUrl
-          }
-        : null,
-      analysisMeta.platform
-        ? {
-            label: "Platform",
-            value: formatDetailValue(analysisMeta.platform)
-          }
-        : null,
-      analysisMeta.category
-        ? {
-            label: "Detected Category",
-            value: formatDetailValue(analysisMeta.category)
-          }
-        : null,
-      analysisMeta.brand
-        ? {
-            label: "Detected Brand",
-            value: analysisMeta.brand
-          }
-        : null,
-      analysisMeta.ingredientSource
-        ? {
-            label: "Ingredient Source",
-            value: formatDetailValue(analysisMeta.ingredientSource)
-          }
-        : null
-    ].filter(Boolean);
-  }, [analysisMeta]);
+  const verdictProductImage =
+    analysisMeta?.image || result?.product?.image || result?.product?.imageUrl || "";
 
   async function handleAnalyze({
     nextSearchQuery = searchQuery,
@@ -169,6 +125,7 @@ export function DashboardShell() {
           status: resolution.status,
           sourceUrl: trimmedUrl,
           label: resolution.product?.name || trimmedUrl,
+          image: resolution.product?.image || "",
           category: resolution.product?.category,
           brand: resolution.product?.brand,
           platform: resolution.platform,
@@ -439,36 +396,19 @@ export function DashboardShell() {
                 <h3 className="display-type mt-3 break-words text-3xl font-semibold leading-tight">
                   {result?.productName || analysisMeta?.label || "Awaiting analysis"}
                 </h3>
-                                <p className="mt-3 text-sm leading-6 text-white/76">
+                {verdictProductImage ? (
+                  <div className="mt-4 overflow-hidden rounded-[22px] border border-white/12 bg-white/10">
+                    <img
+                      src={verdictProductImage}
+                      alt={result?.productName || analysisMeta?.label || "Product image"}
+                      className="h-48 w-full object-cover"
+                    />
+                  </div>
+                ) : null}
+                <p className="mt-3 text-sm leading-6 text-white/76">
                   {result?.verdict ||
                     "Paste a link, type a product name, or paste ingredients to start a stricter analysis."}
                 </p>
-                {personalizedVerdictDetails.length ? (
-                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                    {personalizedVerdictDetails.map((detail) => (
-                      <div
-                        key={detail.label}
-                        className="rounded-2xl border border-white/12 bg-white/8 px-3 py-3"
-                      >
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/54">
-                          {detail.label}
-                        </p>
-                        {detail.href ? (
-                          <a
-                            href={detail.href}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="mt-2 block break-all text-sm text-white/86 transition hover:text-white"
-                          >
-                            {detail.value}
-                          </a>
-                        ) : (
-                          <p className="mt-2 text-sm text-white/86">{detail.value}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
                 <div className="mt-5 flex flex-wrap gap-2">
                   {(profile?.primarySkinConcerns || []).map((concern) => (
                     <span
@@ -1108,6 +1048,7 @@ function getResolutionActions(meta = {}) {
 
   return actions;
 }
+
 
 
 
