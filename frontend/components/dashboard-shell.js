@@ -409,16 +409,6 @@ export function DashboardShell() {
                   {result?.verdict ||
                     "Paste a link, type a product name, or paste ingredients to start a stricter analysis."}
                 </p>
-                <div className="mt-5 flex flex-wrap gap-2">
-                  {(profile?.primarySkinConcerns || []).map((concern) => (
-                    <span
-                      key={concern}
-                      className="rounded-full border border-white/12 bg-white/8 px-3 py-1 text-xs uppercase tracking-[0.22em]"
-                    >
-                      {concern.replaceAll("_", " ")}
-                    </span>
-                  ))}
-                </div>
               </div>
             </div>
           </SectionCard>
