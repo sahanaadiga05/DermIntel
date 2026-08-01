@@ -613,7 +613,6 @@ function IngredientBreakdownCard({ result }) {
             <tr>
               <th className="px-4 py-3 font-semibold">Ingredient</th>
               <th className="px-4 py-3 font-semibold">Estimated %</th>
-              <th className="px-4 py-3 font-semibold">Purpose</th>
               <th className="px-4 py-3 font-semibold">Risk</th>
               <th className="px-4 py-3 font-semibold">Suitability</th>
             </tr>
@@ -626,7 +625,6 @@ function IngredientBreakdownCard({ result }) {
                   <p className="mt-1 text-xs leading-5 text-ink/52">{row.explanation}</p>
                 </td>
                 <td className="px-4 py-3 text-ink/68">{row.estimatedRange}</td>
-                <td className="px-4 py-3 text-ink/68">{row.purpose}</td>
                 <td className="px-4 py-3">
                   <span
                     className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${getRiskBadgeClass(row.riskLevel)}`}
