@@ -52,6 +52,11 @@ function mergeIngredient(prismaIngredient, fallbackIngredient) {
     ...fallbackIngredient,
     ...(prismaIngredient || {}),
     aliases,
+    scientificName: prismaIngredient?.scientificName || fallbackIngredient?.scientificName || null,
+    commonNames: prismaIngredient?.commonNames || fallbackIngredient?.commonNames || [],
+    casNumber: prismaIngredient?.casNumber || fallbackIngredient?.casNumber || null,
+    category: prismaIngredient?.category || fallbackIngredient?.category || null,
+    primaryPurpose: prismaIngredient?.primaryPurpose || fallbackIngredient?.primaryPurpose || null,
     displayPurpose:
       prismaIngredient?.displayPurpose ||
       prismaIngredient?.purpose ||
@@ -59,21 +64,28 @@ function mergeIngredient(prismaIngredient, fallbackIngredient) {
       fallbackIngredient?.purpose ||
       "Unknown",
     purpose: prismaIngredient?.purpose || fallbackIngredient?.purpose || "Unknown",
+    howItWorks: prismaIngredient?.howItWorks || fallbackIngredient?.howItWorks || null,
     riskLevel: prismaIngredient?.riskLevel || fallbackIngredient?.riskLevel || "UNKNOWN",
     benefits: prismaIngredient?.benefits || fallbackIngredient?.benefits || [],
     sideEffects: prismaIngredient?.sideEffects || fallbackIngredient?.sideEffects || [],
     comedogenicRating: prismaIngredient?.comedogenicRating ?? fallbackIngredient?.comedogenicRating ?? 0,
     irritationScore: prismaIngredient?.irritationScore ?? fallbackIngredient?.irritationScore ?? 0,
     suitableSkinTypes: prismaIngredient?.suitableSkinTypes || fallbackIngredient?.suitableSkinTypes || [],
+    bestSkinTypes: prismaIngredient?.bestSkinTypes || fallbackIngredient?.bestSkinTypes || fallbackIngredient?.suitableSkinTypes || [],
     avoidSkinTypes: prismaIngredient?.avoidSkinTypes || fallbackIngredient?.avoidSkinTypes || [],
     functions: prismaIngredient?.functions || fallbackIngredient?.functions || [],
     helps: prismaIngredient?.helps || fallbackIngredient?.helps || [],
+    helpsConcerns: prismaIngredient?.helpsConcerns || fallbackIngredient?.helpsConcerns || fallbackIngredient?.helps || [],
     avoidFor: prismaIngredient?.avoidFor || fallbackIngredient?.avoidFor || [],
     tags: prismaIngredient?.tags || fallbackIngredient?.tags || [],
     riskFlags: prismaIngredient?.riskFlags || fallbackIngredient?.riskFlags || [],
     simpleExplanation:
       prismaIngredient?.simpleExplanation ||
+      prismaIngredient?.howItWorks ||
+      prismaIngredient?.primaryPurpose ||
       fallbackIngredient?.simpleExplanation ||
+      fallbackIngredient?.howItWorks ||
+      fallbackIngredient?.primaryPurpose ||
       "Ingredient knowledge base entry is incomplete.",
     evidenceLevel: prismaIngredient?.evidenceLevel || fallbackIngredient?.evidenceLevel || null,
     references: prismaIngredient?.references || fallbackIngredient?.references || []
@@ -122,3 +134,4 @@ export async function findCanonicalIngredient(value = "") {
   const key = getLookupKey(value);
   return catalog.find((ingredient) => getLookupKey(ingredient.name) === key) || null;
 }
+

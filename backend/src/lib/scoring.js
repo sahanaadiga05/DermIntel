@@ -74,6 +74,77 @@ function buildStrengthsAndWeaknesses(ingredientInsights = []) {
   return { strengths, weaknesses };
 }
 
+function toSentenceList(values = []) {
+  if (!values.length) {
+    return "Not enough profile-specific evidence yet.";
+  }
+
+  if (values.length === 1) {
+    return values[0];
+  }
+
+  if (values.length === 2) {
+    return `${values[0]} and ${values[1]}`;
+  }
+
+  return `${values.slice(0, -1).join(", ")}, and ${values[values.length - 1]}`;
+}
+
+function formatCodeLabel(value = "") {
+  return String(value || "")
+    .toLowerCase()
+    .replaceAll("_", " ");
+}
+
+function buildBenefitsSummary(ingredient = {}) {
+  const benefits = Array.isArray(ingredient.benefits)
+    ? ingredient.benefits.slice(0, 3)
+    : [];
+  const functions = Array.isArray(ingredient.functions)
+    ? ingredient.functions.slice(0, 3)
+    : [];
+  const helps = Array.isArray(ingredient.helpsConcerns || ingredient.helps)
+    ? (ingredient.helpsConcerns || ingredient.helps).slice(0, 3).map(formatCodeLabel)
+    : [];
+
+  if (benefits.length) {
+    return benefits.join(" ");
+  }
+
+  if (functions.length && helps.length) {
+    return `${functions.join(", ")}. Usually helpful for ${toSentenceList(helps)}.`;
+  }
+
+  if (functions.length) {
+    return functions.join(", ");
+  }
+
+  if (helps.length) {
+    return `Usually helpful for ${toSentenceList(helps)}.`;
+  }
+
+  return ingredient.howItWorks || ingredient.primaryPurpose || ingredient.simpleExplanation || "Benefits unavailable.";
+}
+
+function buildProfileReason(insight, ingredient = {}) {
+  const positiveReasons = insight?.positiveReasons || [];
+  const negativeReasons = insight?.negativeReasons || [];
+
+  if (positiveReasons.length && negativeReasons.length) {
+    return `${positiveReasons[0]} The main tradeoff is that ${negativeReasons[0].charAt(0).toLowerCase()}${negativeReasons[0].slice(1)}`;
+  }
+
+  if (positiveReasons.length) {
+    return positiveReasons[0];
+  }
+
+  if (negativeReasons.length) {
+    return negativeReasons[0];
+  }
+
+  return ingredient.primaryPurpose || ingredient.howItWorks || ingredient.simpleExplanation || "DermIntel did not find a strong profile-specific match signal for this ingredient.";
+}
+
 export function searchProducts(query = "") {
   const normalizedQuery = normalize(query);
 
@@ -176,6 +247,7 @@ export async function analyzeFormula({ profile, productName, ingredientsText = "
 
   const ingredientBreakdown = ingredientRows.map((row, index) => {
     const insight = suitability.ingredientInsights.find((entry) => entry.index === index);
+    const ingredient = row.ingredient || null;
 
     return {
       name: row.displayName,
@@ -186,8 +258,22 @@ export async function analyzeFormula({ profile, productName, ingredientsText = "
       explanation:
         insight?.positiveReasons?.[0] ||
         insight?.negativeReasons?.[0] ||
-        row.ingredient?.simpleExplanation ||
-        "Ingredient role not mapped yet"
+        ingredient?.simpleExplanation ||
+        "Ingredient role not mapped yet",
+      details: {
+        purpose: row.purpose,
+        whyIncluded:
+          ingredient?.primaryPurpose ||
+          ingredient?.howItWorks ||
+          ingredient?.simpleExplanation ||
+          "Limited evidence: DermIntel does not yet have a source-backed explanation for this ingredient.",
+        benefits: buildBenefitsSummary(ingredient || {}),
+        profileReason: buildProfileReason(insight, ingredient || {}),
+        howItWorks:
+          ingredient?.howItWorks ||
+          ingredient?.simpleExplanation ||
+          "Limited evidence: DermIntel does not yet have a source-backed mechanism summary for this ingredient."
+      }
     };
   });
 
@@ -223,3 +309,4 @@ export async function analyzeFormula({ profile, productName, ingredientsText = "
     message: "Verified ingredients analyzed deterministically."
   };
 }
+

@@ -382,25 +382,37 @@ async function ensureIngredientRecords(prisma, ingredientList = []) {
         },
         update: {},
         create: buildIngredientCreateData({
+          ...seeded,
           name: canonicalName,
-          scientificName: null,
+          scientificName: seeded?.scientificName || null,
+          commonNames: seeded?.commonNames || [],
+          casNumber: seeded?.casNumber || null,
+          category: seeded?.category || null,
+          primaryPurpose: seeded?.primaryPurpose || seeded?.simpleExplanation || null,
           purpose: seeded?.purpose || "Unknown",
           displayPurpose: seeded?.displayPurpose || seeded?.purpose || "Unknown",
+          howItWorks: seeded?.howItWorks || seeded?.simpleExplanation || null,
           riskLevel: seeded?.riskLevel || "LOW",
           benefits: seeded?.benefits || [],
           sideEffects: seeded?.sideEffects || [],
           suitableSkinTypes: seeded?.suitableSkinTypes || [],
+          bestSkinTypes: seeded?.bestSkinTypes || seeded?.suitableSkinTypes || [],
           avoidSkinTypes: seeded?.avoidSkinTypes || [],
           functions: seeded?.functions || [],
           helps: seeded?.helps || [],
+          helpsConcerns: seeded?.helpsConcerns || seeded?.helps || [],
           avoidFor: seeded?.avoidFor || [],
           tags: seeded?.tags || [],
           riskFlags: seeded?.riskFlags || [],
-          evidenceLevel: seeded?.evidenceLevel || null,
+          evidenceLevel: seeded?.evidenceLevel || "LIMITED",
           references: seeded?.references || [],
           comedogenicRating: seeded?.comedogenicRating ?? 0,
           irritationScore: seeded?.irritationScore ?? 0,
-          simpleExplanation: seeded?.simpleExplanation || "DermIntel stored this ingredient from a verified product formula."
+          simpleExplanation:
+            seeded?.simpleExplanation ||
+            seeded?.howItWorks ||
+            seeded?.primaryPurpose ||
+            "Limited evidence: DermIntel verified this ingredient in a product formula but does not yet have a trusted scientific summary for it."
         })
       });
 
@@ -766,4 +778,5 @@ export async function recordKnowledgeBaseMiss({ fingerprint, websiteLabel, trace
     websiteLabel
   });
 }
+
 

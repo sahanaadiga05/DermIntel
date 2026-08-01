@@ -234,12 +234,12 @@ function buildLookupCorpus(ingredient = {}) {
 }
 
 export function deriveIngredientScoringSignals(ingredient = {}) {
-  const helps = normalizeCodeList(ingredient.helps || []);
+  const helps = normalizeCodeList(ingredient.helpsConcerns || ingredient.helps || []);
   const functions = normalizeCodeList(ingredient.functions || []);
   const tags = normalizeCodeList(ingredient.tags || []);
   const avoidFor = normalizeCodeList(ingredient.avoidFor || []);
   const riskFlags = normalizeCodeList(ingredient.riskFlags || []);
-  const suitableSkinTypes = normalizeCodeList(ingredient.suitableSkinTypes || ingredient.skinTypes || []);
+  const suitableSkinTypes = normalizeCodeList(ingredient.bestSkinTypes || ingredient.suitableSkinTypes || ingredient.skinTypes || []);
   const avoidSkinTypes = normalizeCodeList(ingredient.avoidSkinTypes || []);
   const benefitDimensions = new Set();
 
@@ -343,3 +343,4 @@ export function describeDimensions(dimensions = []) {
     .slice(0, 2)
     .join(" and ");
 }
+

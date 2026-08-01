@@ -1,6 +1,6 @@
-﻿"use client";
+"use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -10,6 +10,7 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
+  ChevronDown,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL, api } from "@/lib/api";
@@ -536,6 +537,11 @@ function ScoreMetricCard({ label, value, status }) {
 
 function IngredientBreakdownCard({ result }) {
   const rows = result?.ingredientBreakdown || [];
+  const [expandedIngredient, setExpandedIngredient] = useState(null);
+
+  function toggleIngredient(name) {
+    setExpandedIngredient((current) => (current === name ? null : name));
+  }
 
   return (
     <div className="rounded-[28px] border border-ink/8 bg-white/72 p-5">
@@ -549,39 +555,71 @@ function IngredientBreakdownCard({ result }) {
       </div>
 
       <div className="no-scrollbar mt-4 max-w-full overflow-x-auto rounded-[22px] border border-ink/8 bg-white/80">
-        <table className="min-w-[760px] divide-y divide-ink/8 text-sm">
+        <table className="min-w-[940px] divide-y divide-ink/8 text-sm">
           <thead className="bg-mist/70 text-left text-xs uppercase tracking-[0.18em] text-pine/62">
             <tr>
               <th className="px-4 py-3 font-semibold">Ingredient</th>
+              <th className="px-4 py-3 font-semibold">Purpose</th>
               <th className="px-4 py-3 font-semibold">Estimated %</th>
               <th className="px-4 py-3 font-semibold">Risk</th>
               <th className="px-4 py-3 font-semibold">Suitability</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-ink/6">
-            {rows.map((row) => (
-              <tr key={row.name}>
-                <td className="px-4 py-3">
-                  <p className="font-medium capitalize text-ink">{row.name}</p>
-                  <p className="mt-1 text-xs leading-5 text-ink/52">{row.explanation}</p>
-                </td>
-                <td className="px-4 py-3 text-ink/68">{row.estimatedRange}</td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${getRiskBadgeClass(row.riskLevel)}`}
+            {rows.map((row) => {
+              const isExpanded = expandedIngredient === row.name;
+
+              return (
+                <Fragment key={row.name}>
+                  <tr
+                    className="cursor-pointer transition hover:bg-mist/45"
+                    onClick={() => toggleIngredient(row.name)}
                   >
-                    {row.riskLevel}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${getSuitabilityBadgeClass(row.suitability)}`}
-                  >
-                    {row.suitability}
-                  </span>
-                </td>
-              </tr>
-            ))}
+                    <td className="px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium capitalize text-ink">{row.name}</p>
+                        </div>
+                        <ChevronDown
+                          className={`mt-1 h-4 w-4 flex-none text-ink/44 transition ${isExpanded ? "rotate-180" : ""}`}
+                        />
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-xs leading-5 text-ink/58">
+                      {row.details?.whyIncluded || row.explanation}
+                    </td>
+                    <td className="px-4 py-3 text-ink/68">{row.estimatedRange}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${getRiskBadgeClass(row.riskLevel)}`}
+                      >
+                        {row.riskLevel}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${getSuitabilityBadgeClass(row.suitability)}`}
+                      >
+                        {row.suitability}
+                      </span>
+                    </td>
+                  </tr>
+                  {isExpanded ? (
+                    <tr className="bg-mist/30">
+                      <td colSpan={5} className="px-4 py-4">
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <IngredientDetail label="Benefits" value={row.details?.benefits || row.explanation} />
+                          <IngredientDetail
+                            label="Why it matches your profile"
+                            value={row.details?.profileReason || row.explanation}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -592,6 +630,16 @@ function IngredientBreakdownCard({ result }) {
     </div>
   );
 }
+
+function IngredientDetail({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-ink/8 bg-white/80 px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-pine/56">{label}</p>
+      <p className="mt-2 text-sm leading-6 text-ink/72">{value || "Not available yet."}</p>
+    </div>
+  );
+}
+
 function InfoList({ icon, title, items = [], emptyMessage, tone, compact = false }) {
   const toneClass =
     tone === "emerald"
@@ -724,7 +772,7 @@ function completeGeneratingAnalysisStep(steps = []) {
 
 function failGeneratingAnalysisStep(steps = [], message) {
   return steps.map((step) =>
-    step.label === "Generating AI analysis"
+    step.label === "Generating AI explanation"
       ? {
           ...step,
           state: "failed",
@@ -1000,6 +1048,11 @@ function getResolutionActions(meta = {}) {
 
   return actions;
 }
+
+
+
+
+
 
 
 

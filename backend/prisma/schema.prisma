@@ -45,15 +45,22 @@ model Ingredient {
   id                 String              @id @default(uuid())
   name               String              @unique
   scientificName     String?
+  commonNames        Json?
+  casNumber          String?
+  category           String?
+  primaryPurpose     String?
   purpose            String
   displayPurpose     String?
+  howItWorks         String?
   riskLevel          RiskLevel
   benefits           Json
   sideEffects        Json
   suitableSkinTypes  Json
+  bestSkinTypes      Json?
   avoidSkinTypes     Json
   functions          Json?
   helps              Json?
+  helpsConcerns      Json?
   avoidFor           Json?
   tags               Json?
   riskFlags          Json?
@@ -334,3 +341,4 @@ enum CommunityReviewStatus {
   APPROVED
   REJECTED
 }
+
