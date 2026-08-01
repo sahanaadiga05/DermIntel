@@ -5,6 +5,7 @@ import { getLookupKey } from "../formula-analysis/ingredient-normalizer.js";
 import { normalizeProductName, normalizeWhitespace } from "../product-normalizer.js";
 import { logUrlAnalysis } from "../url-analysis/logger.js";
 import { createProductFingerprint } from "./product-fingerprint.js";
+import { buildIngredientCreateData, buildSeedIngredientKnowledge } from "./ingredient-knowledge.js";
 
 let prismaClientPromise;
 const memoryProducts = new Map();
@@ -46,7 +47,7 @@ function cloneValue(value) {
 function normalizeAliasKey(value = "") {
   return normalizeWhitespace(value)
     .toLowerCase()
-    .replace(/[™®©]/g, "")
+    .replace(/[\u2122\u00AE\u00A9]/g, "")
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -370,7 +371,8 @@ async function ensureIngredientRecords(prisma, ingredientList = []) {
   }
 
   for (const ingredientName of ingredientList) {
-    const seeded = ingredientCatalog.find((entry) => getLookupKey(entry.name) === getLookupKey(ingredientName));
+    const rawSeeded = ingredientCatalog.find((entry) => getLookupKey(entry.name) === getLookupKey(ingredientName));
+    const seeded = rawSeeded ? buildSeedIngredientKnowledge(rawSeeded) : null;
     const canonicalName = seeded?.name || ingredientName;
 
     try {
@@ -379,19 +381,27 @@ async function ensureIngredientRecords(prisma, ingredientList = []) {
           name: canonicalName
         },
         update: {},
-        create: {
+        create: buildIngredientCreateData({
           name: canonicalName,
           scientificName: null,
           purpose: seeded?.purpose || "Unknown",
+          displayPurpose: seeded?.displayPurpose || seeded?.purpose || "Unknown",
           riskLevel: seeded?.riskLevel || "LOW",
-          benefits: seeded?.suitableSkinTypes || [],
-          sideEffects: seeded?.riskFlags || [],
+          benefits: seeded?.benefits || [],
+          sideEffects: seeded?.sideEffects || [],
           suitableSkinTypes: seeded?.suitableSkinTypes || [],
           avoidSkinTypes: seeded?.avoidSkinTypes || [],
+          functions: seeded?.functions || [],
+          helps: seeded?.helps || [],
+          avoidFor: seeded?.avoidFor || [],
+          tags: seeded?.tags || [],
+          riskFlags: seeded?.riskFlags || [],
+          evidenceLevel: seeded?.evidenceLevel || null,
+          references: seeded?.references || [],
           comedogenicRating: seeded?.comedogenicRating ?? 0,
           irritationScore: seeded?.irritationScore ?? 0,
           simpleExplanation: seeded?.simpleExplanation || "DermIntel stored this ingredient from a verified product formula."
-        }
+        })
       });
 
       if (prisma.ingredientAlias?.upsert) {

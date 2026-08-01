@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
-  CheckCircle2,
   Link2,
   LoaderCircle,
   LogOut,
@@ -406,7 +405,7 @@ export function DashboardShell() {
                   </div>
                 ) : null}
                 <p className="mt-3 text-sm leading-6 text-white/76">
-                  {result?.verdict ||
+                  {result?.explanation || result?.verdict ||
                     "Paste a link, type a product name, or paste ingredients to start a stricter analysis."}
                 </p>
               </div>
@@ -419,66 +418,36 @@ export function DashboardShell() {
         {result && scoreSummary ? (
           <>
             <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-12">
-              <div className="min-w-0 md:col-span-6 lg:col-span-4">
+              <div className="min-w-0 md:col-span-6">
               <ScoreMetricCard
                 label="Safety"
                 value={scoreSummary.safety}
                 status={scoreSummary.safetyStatus}
               />
               </div>
-              <div className="min-w-0 md:col-span-6 lg:col-span-4">
+              <div className="min-w-0 md:col-span-6">
               <ScoreMetricCard
                 label="Suitability"
                 value={scoreSummary.suitability}
                 status={scoreSummary.suitabilityStatus}
               />
               </div>
-              <motion.div
-                whileHover={{ y: -2 }}
-                transition={{ duration: 0.2 }}
-                className="bento-card lift-card flex min-h-[260px] min-w-0 flex-col justify-between rounded-[26px] p-5 md:col-span-12 lg:col-span-4"
-              >
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-pine/54">
-                    Score Summary
-                  </p>
-                  <div className="mt-4 space-y-3 text-sm text-ink/72">
-                    <SummaryRow label="Safety Score" value={scoreSummary.safety} />
-                    <SummaryRow label="Suitability Score" value={scoreSummary.suitability} />
-                    {scoreSummary.confidence !== null ? (
-                      <SummaryRow label="Confidence Score" value={`${scoreSummary.confidence}%`} />
-                    ) : null}
-                  </div>
-                </div>
-                <div className="mt-5 space-y-3">
-                  <div className="rounded-2xl border border-pine/10 bg-mist px-4 py-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-pine/56">
-                      Final Verdict
-                    </p>
-                    <p className="mt-2 text-sm font-medium leading-6 text-ink">
-                      {result.verdict}
-                    </p>
-                  </div>
-                  {result.confidenceDetails?.length ? (
-                    <div className="rounded-2xl border border-ink/8 bg-white/78 px-4 py-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-pine/56">
-                        Confidence Details
-                      </p>
-                      <div className="mt-3 space-y-2">
-                        {result.confidenceDetails.map((detail) => (
-                          <p
-                            key={detail}
-                            className="flex items-start gap-2 text-sm leading-6 text-ink/72"
-                          >
-                            <CheckCircle2 className="mt-1 h-4 w-4 flex-none text-emerald-600" />
-                            <span>{detail}</span>
-                          </p>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </motion.div>
+            </div>
+            <div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-2">
+              <InfoList
+                icon={<ShieldCheck className="h-4 w-4" />}
+                title="Top positives"
+                items={result?.pros}
+                emptyMessage="No standout strengths yet."
+                tone="emerald"
+              />
+              <InfoList
+                icon={<AlertTriangle className="h-4 w-4" />}
+                title="Watchouts"
+                items={result?.cons}
+                emptyMessage="No major warning flags detected."
+                tone="amber"
+              />
             </div>
             <p className="mt-4 text-sm leading-6 text-ink/56">
               Scores are calculated using ingredient safety, irritation risk, comedogenic rating,
@@ -496,41 +465,22 @@ export function DashboardShell() {
       <div className="mt-5 grid min-w-0 gap-5">
         <SectionCard title="Your personalized verdict" eyebrow="Analysis result">
           {result ? (
-            <div className="grid min-w-0 gap-4 xl:grid-cols-12">
-              <div className="min-w-0 space-y-4 xl:col-span-4">
-                <InfoList
-                  icon={<ShieldCheck className="h-4 w-4" />}
-                  title="Top positives"
-                  items={result?.pros}
-                  emptyMessage="No standout strengths yet."
-                  tone="emerald"
-                />
-                <InfoList
-                  icon={<AlertTriangle className="h-4 w-4" />}
-                  title="Watchouts"
-                  items={result?.cons}
-                  emptyMessage="No major warning flags detected."
-                  tone="amber"
-                />
-              </div>
+            <div className="space-y-4">
+              <IngredientBreakdownCard result={result} />
 
-              <div className="min-w-0 space-y-4 xl:col-span-8">
-                <IngredientBreakdownCard result={result} />
-
-                <div className="rounded-[28px] border border-ink/8 bg-white/72 p-5">
-                  <p className="text-sm font-semibold text-ink">Unknown ingredients</p>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {(result?.unknownIngredients?.length
-                      ? result.unknownIngredients
-                      : ["None"]).map((ingredient) => (
-                      <span
-                        key={ingredient}
-                        className="rounded-full bg-coral/10 px-3 py-2 text-xs font-medium uppercase tracking-[0.12em] text-coral"
-                      >
-                        {ingredient}
-                      </span>
-                    ))}
-                  </div>
+              <div className="rounded-[28px] border border-ink/8 bg-white/72 p-5">
+                <p className="text-sm font-semibold text-ink">Unknown ingredients</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {(result?.unknownIngredients?.length
+                    ? result.unknownIngredients
+                    : ["None"]).map((ingredient) => (
+                    <span
+                      key={ingredient}
+                      className="rounded-full bg-coral/10 px-3 py-2 text-xs font-medium uppercase tracking-[0.12em] text-coral"
+                    >
+                      {ingredient}
+                    </span>
+                  ))}
                 </div>
               </div>
             </div>
@@ -581,15 +531,6 @@ function ScoreMetricCard({ label, value, status }) {
         {status}
       </span>
     </motion.div>
-  );
-}
-
-function SummaryRow({ label, value }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-ink/6 bg-white/72 px-3 py-2.5">
-      <span className="text-ink/56">{label}</span>
-      <span className="font-semibold text-ink">{value}</span>
-    </div>
   );
 }
 
@@ -651,23 +592,26 @@ function IngredientBreakdownCard({ result }) {
     </div>
   );
 }
-function InfoList({ icon, title, items = [], emptyMessage, tone }) {
+function InfoList({ icon, title, items = [], emptyMessage, tone, compact = false }) {
   const toneClass =
     tone === "emerald"
       ? "bg-emerald-50 text-emerald-700"
       : "bg-amber-50 text-amber-700";
 
   return (
-    <div className="rounded-[28px] border border-ink/8 bg-white/72 p-5">
+    <div className={`rounded-[28px] border border-ink/8 bg-white/72 ${compact ? "p-4" : "p-5"}`}>
       <div
         className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.22em] ${toneClass}`}
       >
         {icon}
         {title}
       </div>
-      <div className="mt-4 space-y-3 text-sm text-ink/72">
+      <div className={`text-sm text-ink/72 ${compact ? "mt-3 space-y-2" : "mt-4 space-y-3"}`}>
         {(items.length ? items : [emptyMessage]).map((item) => (
-          <p key={item} className="rounded-2xl bg-mist px-4 py-3 leading-6">
+          <p
+            key={item}
+            className={`rounded-2xl bg-mist leading-6 ${compact ? "px-3 py-2.5" : "px-4 py-3"}`}
+          >
             {item}
           </p>
         ))}
@@ -748,9 +692,9 @@ function buildPendingAnalysisTrace(isManualIngredients) {
         : "Using the selected product information for analysis."
     },
     {
-      label: "Generating AI analysis",
+      label: "Generating AI explanation",
       state: "in_progress",
-      details: "Calculating safety, suitability, and compatibility scores."
+      details: "Explaining the deterministic backend result in user-friendly language."
     }
   ];
 }
@@ -759,20 +703,20 @@ function appendGeneratingAnalysisStep(steps = []) {
   return [
     ...steps,
     {
-      label: "Generating AI analysis",
+      label: "Generating AI explanation",
       state: "in_progress",
-      details: "Verified ingredients found. Running personalized analysis."
+      details: "Verified ingredients found. Generating the final explanation from the locked backend score."
     }
   ];
 }
 
 function completeGeneratingAnalysisStep(steps = []) {
   return steps.map((step) =>
-    step.label === "Generating AI analysis"
+    step.label === "Generating AI explanation"
       ? {
           ...step,
           state: "completed",
-          details: "Verified ingredients analyzed successfully."
+          details: "Deterministic scoring completed and the final explanation is ready."
         }
       : step
   );
@@ -784,7 +728,7 @@ function failGeneratingAnalysisStep(steps = [], message) {
       ? {
           ...step,
           state: "failed",
-          details: message || "Analysis stopped because DermIntel could not verify the ingredients."
+          details: message || "Explanation stopped because DermIntel could not verify the ingredients."
         }
       : step
   );
@@ -861,21 +805,33 @@ function buildProfileSummary(profile) {
     SKIN_SENSITIVITY_OPTIONS,
     profile.skinSensitivity
   ).toLowerCase();
-  const hairDensity = formatDisplayValue(HAIR_DENSITY_OPTIONS, profile.hairDensity).toLowerCase();
   const hairType = formatDisplayValue(HAIR_TYPE_OPTIONS, profile.hairType).toLowerCase();
+  const scalpType = String(profile.scalpType || "normal")
+    .toLowerCase()
+    .replaceAll("_", " ");
   const concerns = formatListValues(SKIN_CONCERN_OPTIONS, profile.primarySkinConcerns || [])
     .map((item) => item.toLowerCase())
     .slice(0, 3);
   const goals = formatListValues(SKINCARE_GOAL_OPTIONS, profile.primarySkincareGoals || [])
     .map((item) => item.toLowerCase())
     .slice(0, 3);
+  const hairGoals = (profile.haircareGoals || [])
+    .map((item) => String(item).toLowerCase().replaceAll("_", " "))
+    .slice(0, 2);
   const allergies = formatListValues(
     ALLERGY_OPTIONS,
     (profile.cosmeticAllergies || []).filter((item) => item !== "NONE" && item !== "OTHER")
   ).map((item) => item.toLowerCase());
+  const avoids = (profile.avoidIngredients || [])
+    .filter((item) => item !== "NONE" && item !== "OTHER")
+    .map((item) => String(item).toLowerCase().replaceAll("_", " "));
 
   if (profile.otherAllergy) {
     allergies.push(profile.otherAllergy.toLowerCase());
+  }
+
+  if (profile.otherAvoidIngredient) {
+    avoids.push(profile.otherAvoidIngredient.toLowerCase());
   }
 
   const priorityTags = [];
@@ -901,15 +857,15 @@ function buildProfileSummary(profile) {
   if (
     profile.primarySkinConcerns?.includes("PIGMENTATION") ||
     profile.primarySkinConcerns?.includes("DARK_SPOTS") ||
-    profile.primarySkincareGoals?.includes("BRIGHTENING")
+    profile.primarySkincareGoals?.includes("BRIGHTENING") ||
+    profile.primarySkincareGoals?.includes("EVEN_SKIN_TONE")
   ) {
     priorityTags.push("tone-evening");
   }
 
   const priorities = [...new Set(priorityTags)].slice(0, 3);
-
   const sentences = [
-    `You have ${skinType} skin with ${sensitivity} sensitivity and ${hairDensity}-density ${hairType} hair.`
+    `You have ${skinType} skin, ${sensitivity} sensitivity, ${hairType} hair, and a ${scalpType} scalp.`
   ];
 
   if (concerns.length) {
@@ -924,6 +880,14 @@ function buildProfileSummary(profile) {
     sentences.push(`Your analyses will prioritize ${toSentenceList(priorities)} ingredients.`);
   } else if (goals.length) {
     sentences.push(`Your analyses will prioritize formulas aligned with ${toSentenceList(goals)} goals.`);
+  }
+
+  if (hairGoals.length) {
+    sentences.push(`For haircare, DermIntel will prioritize ${toSentenceList(hairGoals)} goals.`);
+  }
+
+  if (avoids.length) {
+    sentences.push(`It will also avoid ${toSentenceList(avoids.slice(0, 3))} when possible.`);
   }
 
   return sentences.join(" ");
@@ -1036,6 +1000,7 @@ function getResolutionActions(meta = {}) {
 
   return actions;
 }
+
 
 
 

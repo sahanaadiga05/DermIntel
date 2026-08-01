@@ -7,15 +7,14 @@ import { useRouter } from "next/navigation";
 import { BrandMark } from "@/components/brand-mark";
 import { api } from "@/lib/api";
 import {
-  AGE_GROUP_OPTIONS,
   ALLERGY_OPTIONS,
+  AVOID_INGREDIENT_OPTIONS,
   DEFAULT_PROFILE_FORM,
-  GENDER_OPTIONS,
+  HAIRCARE_GOAL_OPTIONS,
   HAIR_CONCERN_OPTIONS,
-  HAIR_DENSITY_OPTIONS,
   HAIR_TYPE_OPTIONS,
-  MAKEUP_USAGE_OPTIONS,
   PROFILE_QUESTION_STEPS,
+  SCALP_TYPE_OPTIONS,
   SKIN_CONCERN_OPTIONS,
   SKIN_SENSITIVITY_OPTIONS,
   SKIN_TYPE_OPTIONS,
@@ -25,17 +24,104 @@ import { useSessionStore } from "@/store/use-session-store";
 
 const OPTION_GROUPS = {
   skinType: SKIN_TYPE_OPTIONS,
-  hairType: HAIR_TYPE_OPTIONS,
-  hairDensity: HAIR_DENSITY_OPTIONS,
   skinSensitivity: SKIN_SENSITIVITY_OPTIONS,
   primarySkinConcerns: SKIN_CONCERN_OPTIONS,
-  hairConcerns: HAIR_CONCERN_OPTIONS,
-  cosmeticAllergies: ALLERGY_OPTIONS,
-  makeupUsage: MAKEUP_USAGE_OPTIONS,
   primarySkincareGoals: SKINCARE_GOAL_OPTIONS,
-  ageGroup: AGE_GROUP_OPTIONS,
-  gender: GENDER_OPTIONS
+  cosmeticAllergies: ALLERGY_OPTIONS,
+  hairType: HAIR_TYPE_OPTIONS,
+  scalpType: SCALP_TYPE_OPTIONS,
+  hairConcerns: HAIR_CONCERN_OPTIONS,
+  haircareGoals: HAIRCARE_GOAL_OPTIONS,
+  avoidIngredients: AVOID_INGREDIENT_OPTIONS
 };
+
+const OPTION_VALUE_SETS = Object.fromEntries(
+  Object.entries(OPTION_GROUPS).map(([field, options]) => [field, new Set(options.map((option) => option.value))])
+);
+
+const LEGACY_HAIRCARE_GOAL_MAP = {
+  HAIR_GROWTH: "HAIR_GROWTH",
+  HAIR_SMOOTHENING: "SMOOTH_HAIR"
+};
+
+function filterValidSelections(values, validValues) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  return Array.from(new Set(values.filter((value) => validValues.has(value))));
+}
+
+function collapseNoneSelection(values) {
+  return values.includes("NONE") ? ["NONE"] : values;
+}
+
+function sanitizeSingleValue(value, validValues) {
+  return typeof value === "string" && validValues.has(value) ? value : "";
+}
+
+function sanitizeProfileForForm(profile = {}) {
+  const legacyHaircareGoals = Array.isArray(profile.primarySkincareGoals)
+    ? profile.primarySkincareGoals
+        .map((value) => LEGACY_HAIRCARE_GOAL_MAP[value])
+        .filter((value) => value && OPTION_VALUE_SETS.haircareGoals.has(value))
+    : [];
+
+  const cosmeticAllergies = collapseNoneSelection(
+    filterValidSelections(profile.cosmeticAllergies, OPTION_VALUE_SETS.cosmeticAllergies)
+  );
+  const avoidIngredients = collapseNoneSelection(
+    filterValidSelections(profile.avoidIngredients, OPTION_VALUE_SETS.avoidIngredients)
+  );
+
+  return {
+    ...DEFAULT_PROFILE_FORM,
+    skinType: sanitizeSingleValue(profile.skinType, OPTION_VALUE_SETS.skinType),
+    skinSensitivity: sanitizeSingleValue(profile.skinSensitivity, OPTION_VALUE_SETS.skinSensitivity),
+    primarySkinConcerns: filterValidSelections(
+      profile.primarySkinConcerns,
+      OPTION_VALUE_SETS.primarySkinConcerns
+    ),
+    primarySkincareGoals: filterValidSelections(
+      profile.primarySkincareGoals,
+      OPTION_VALUE_SETS.primarySkincareGoals
+    ),
+    cosmeticAllergies,
+    otherAllergy: cosmeticAllergies.includes("OTHER") ? profile.otherAllergy || "" : "",
+    hairType: sanitizeSingleValue(profile.hairType, OPTION_VALUE_SETS.hairType),
+    scalpType: sanitizeSingleValue(profile.scalpType, OPTION_VALUE_SETS.scalpType),
+    hairConcerns: filterValidSelections(profile.hairConcerns, OPTION_VALUE_SETS.hairConcerns),
+    haircareGoals: Array.from(
+      new Set([
+        ...filterValidSelections(profile.haircareGoals, OPTION_VALUE_SETS.haircareGoals),
+        ...legacyHaircareGoals
+      ])
+    ),
+    avoidIngredients,
+    otherAvoidIngredient: avoidIngredients.includes("OTHER") ? profile.otherAvoidIngredient || "" : "",
+    hairDensity: profile.hairDensity || "MEDIUM",
+    makeupUsage: profile.makeupUsage || "OCCASIONALLY",
+    ageGroup: profile.ageGroup || "",
+    gender: profile.gender || ""
+  };
+}
+
+function getSaveErrorMessage(saveError) {
+  const apiError = saveError.response?.data;
+
+  if (typeof apiError?.message === "string" && apiError.message.trim()) {
+    return apiError.message;
+  }
+
+  if (Array.isArray(apiError?.errors) && apiError.errors.length > 0) {
+    const firstError = apiError.errors[0];
+    if (typeof firstError?.message === "string" && firstError.message.trim()) {
+      return firstError.message;
+    }
+  }
+
+  return "We could not save your profile just yet. Please try again.";
+}
 
 export function OnboardingFlow() {
   const router = useRouter();
@@ -47,13 +133,7 @@ export function OnboardingFlow() {
 
   useEffect(() => {
     if (profile) {
-      setForm({
-        ...DEFAULT_PROFILE_FORM,
-        ...profile,
-        otherAllergy: profile.otherAllergy || "",
-        ageGroup: profile.ageGroup || "",
-        gender: profile.gender || ""
-      });
+      setForm(sanitizeProfileForForm(profile));
     }
   }, [profile]);
 
@@ -72,13 +152,15 @@ export function OnboardingFlow() {
 
   function toggleMultiValue(field, value) {
     setForm((previous) => {
-      const currentValues = previous[field];
+      const currentValues = previous[field] || [];
       const exists = currentValues.includes(value);
       let nextValues = exists
         ? currentValues.filter((entry) => entry !== value)
         : [...currentValues, value];
 
-      if (field === "cosmeticAllergies") {
+      if (field === "cosmeticAllergies" || field === "avoidIngredients") {
+        const otherField = field === "cosmeticAllergies" ? "otherAllergy" : "otherAvoidIngredient";
+
         if (value === "NONE" && !exists) {
           nextValues = ["NONE"];
         } else if (value !== "NONE" && !exists) {
@@ -89,7 +171,7 @@ export function OnboardingFlow() {
           return {
             ...previous,
             [field]: nextValues,
-            otherAllergy: ""
+            [otherField]: ""
           };
         }
       }
@@ -105,10 +187,6 @@ export function OnboardingFlow() {
   function validateStep() {
     const value = form[currentStep.field];
 
-    if (currentStep.optional) {
-      return true;
-    }
-
     if (currentStep.type === "single" && !value) {
       setError("Please choose one option to continue.");
       return false;
@@ -119,8 +197,8 @@ export function OnboardingFlow() {
       return false;
     }
 
-    if (currentStep.field === "cosmeticAllergies" && value.includes("OTHER") && !form.otherAllergy.trim()) {
-      setError("Tell us which allergy should be noted.");
+    if (currentStep.otherField && value.includes("OTHER") && !form[currentStep.otherField].trim()) {
+      setError("Please fill in the additional detail to continue.");
       return false;
     }
 
@@ -149,20 +227,21 @@ export function OnboardingFlow() {
 
     try {
       setIsSaving(true);
+      const normalizedForm = sanitizeProfileForForm(form);
       const payload = {
-        ...form,
-        otherAllergy: form.otherAllergy.trim() || null,
-        ageGroup: form.ageGroup || null,
-        gender: form.gender || null
+        ...normalizedForm,
+        hairDensity: normalizedForm.hairDensity || "MEDIUM",
+        makeupUsage: normalizedForm.makeupUsage || "OCCASIONALLY",
+        otherAllergy: normalizedForm.otherAllergy.trim() || null,
+        otherAvoidIngredient: normalizedForm.otherAvoidIngredient.trim() || null,
+        ageGroup: normalizedForm.ageGroup || null,
+        gender: normalizedForm.gender || null
       };
       const response = await api.put("/profile/me", payload);
       updateProfile(response.data.profile);
       router.replace("/dashboard");
     } catch (saveError) {
-      setError(
-        saveError.response?.data?.message ||
-          "We could not save your profile just yet. Please try again."
-      );
+      setError(getSaveErrorMessage(saveError));
     } finally {
       setIsSaving(false);
     }
@@ -205,9 +284,6 @@ export function OnboardingFlow() {
                 <p className="text-xs font-semibold uppercase tracking-[0.28em] text-pine/56">
                   Step {stepIndex + 1}
                 </p>
-                <p className="mt-2 text-sm text-ink/58">
-                  {currentStep.optional ? "Optional question" : "Required question"}
-                </p>
               </div>
               <div className="text-sm font-medium text-ink/60">
                 {Math.round(progress)}% complete
@@ -235,9 +311,11 @@ export function OnboardingFlow() {
                   <h2 className="display-type text-3xl font-semibold leading-tight text-ink sm:text-5xl">
                     {currentStep.title}
                   </h2>
-                  <p className="mt-3 max-w-2xl text-base leading-7 text-ink/64">
-                    {currentStep.description}
-                  </p>
+                  {currentStep.description ? (
+                    <p className="mt-3 max-w-2xl text-base leading-7 text-ink/64">
+                      {currentStep.description}
+                    </p>
+                  ) : null}
                 </div>
 
                 {currentStep.type === "single" ? (
@@ -267,17 +345,17 @@ export function OnboardingFlow() {
                   </div>
                 )}
 
-                {currentStep.field === "cosmeticAllergies" && form.cosmeticAllergies.includes("OTHER") ? (
+                {currentStep.otherField && form[currentStep.field].includes("OTHER") ? (
                   <div className="mt-5">
                     <label className="block text-sm font-medium text-ink/68">
-                      Tell us the allergy or trigger
+                      {currentStep.otherLabel}
                     </label>
                     <input
                       type="text"
-                      value={form.otherAllergy}
-                      onChange={(event) => setFieldValue("otherAllergy", event.target.value)}
+                      value={form[currentStep.otherField]}
+                      onChange={(event) => setFieldValue(currentStep.otherField, event.target.value)}
                       className="mt-2 w-full rounded-2xl border border-ink/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-pine"
-                      placeholder="Example: specific preservative or botanical extract"
+                      placeholder="Type here"
                     />
                   </div>
                 ) : null}
@@ -286,12 +364,6 @@ export function OnboardingFlow() {
                   <div className="mt-5 rounded-2xl border border-coral/18 bg-coral/8 px-4 py-3 text-sm text-coral">
                     {error}
                   </div>
-                ) : null}
-
-                {currentStep.optional ? (
-                  <p className="mt-5 text-sm text-ink/52">
-                    You can leave this blank and continue if you prefer.
-                  </p>
                 ) : null}
               </motion.div>
             </AnimatePresence>
@@ -368,4 +440,3 @@ function OptionCard({ label, description, selected, onClick, multi = false }) {
     </button>
   );
 }
-

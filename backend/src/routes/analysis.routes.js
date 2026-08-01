@@ -13,7 +13,9 @@ const analysisProfileSchema = z.object({
   primarySkinConcerns: z.array(z.string()).default([]),
   primarySkincareGoals: z.array(z.string()).default([]),
   cosmeticAllergies: z.array(z.string()).default([]),
-  otherAllergy: z.string().optional().nullable().default(null)
+  otherAllergy: z.string().optional().nullable().default(null),
+  avoidIngredients: z.array(z.string()).optional().default([]),
+  otherAvoidIngredient: z.string().optional().nullable().default(null)
 });
 
 const analysisSchema = z.object({

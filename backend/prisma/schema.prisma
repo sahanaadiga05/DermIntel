@@ -46,11 +46,19 @@ model Ingredient {
   name               String              @unique
   scientificName     String?
   purpose            String
+  displayPurpose     String?
   riskLevel          RiskLevel
   benefits           Json
   sideEffects        Json
   suitableSkinTypes  Json
   avoidSkinTypes     Json
+  functions          Json?
+  helps              Json?
+  avoidFor           Json?
+  tags               Json?
+  riskFlags          Json?
+  evidenceLevel      String?
+  references         Json?
   comedogenicRating  Int
   irritationScore    Int
   simpleExplanation  String

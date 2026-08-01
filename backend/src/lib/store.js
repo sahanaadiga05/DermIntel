@@ -1,5 +1,6 @@
-import { randomUUID } from "node:crypto";
+﻿import { randomUUID } from "node:crypto";
 import { profiles, users } from "../data/mock-data.js";
+import { expandStoredProfile } from "./profile-schema.js";
 
 let prismaClientPromise;
 
@@ -47,13 +48,17 @@ export function serializeUser(user) {
 }
 
 function cloneProfile(profile) {
-  return profile
+  const expanded = expandStoredProfile(profile);
+
+  return expanded
     ? {
-        ...profile,
-        primarySkinConcerns: [...profile.primarySkinConcerns],
-        hairConcerns: [...profile.hairConcerns],
-        cosmeticAllergies: [...profile.cosmeticAllergies],
-        primarySkincareGoals: [...profile.primarySkincareGoals]
+        ...expanded,
+        primarySkinConcerns: [...(expanded.primarySkinConcerns || [])],
+        hairConcerns: [...(expanded.hairConcerns || [])],
+        cosmeticAllergies: [...(expanded.cosmeticAllergies || [])],
+        primarySkincareGoals: [...(expanded.primarySkincareGoals || [])],
+        haircareGoals: [...(expanded.haircareGoals || [])],
+        avoidIngredients: [...(expanded.avoidIngredients || [])]
       }
     : null;
 }
@@ -134,9 +139,11 @@ export async function getProfileByUserId(userId) {
   const prisma = await getPrismaClient();
 
   if (prisma) {
-    return prisma.profile.findUnique({
+    const profile = await prisma.profile.findUnique({
       where: { userId }
     });
+
+    return cloneProfile(profile);
   }
 
   return cloneProfile(profiles.find((entry) => entry.userId === userId) || null);
@@ -146,7 +153,7 @@ export async function upsertProfile(userId, input) {
   const prisma = await getPrismaClient();
 
   if (prisma) {
-    return prisma.profile.upsert({
+    const profile = await prisma.profile.upsert({
       where: { userId },
       update: {
         ...input,
@@ -158,6 +165,8 @@ export async function upsertProfile(userId, input) {
         completedAt: new Date(input.completedAt)
       }
     });
+
+    return cloneProfile(profile);
   }
 
   const existingIndex = profiles.findIndex((entry) => entry.userId === userId);
@@ -177,4 +186,3 @@ export async function upsertProfile(userId, input) {
 
   return cloneProfile(nextProfile);
 }
-

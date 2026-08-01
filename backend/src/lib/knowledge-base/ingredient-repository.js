@@ -1,4 +1,5 @@
 import { ingredientCatalog } from "../../data/mock-data.js";
+import { buildSeedIngredientKnowledge, ensureStructuredIngredientKnowledge } from "./ingredient-knowledge.js";
 
 let prismaClientPromise;
 let cachedKnowledgeBase = null;
@@ -35,7 +36,7 @@ async function getPrismaClient() {
 function getLookupKey(value = "") {
   return value
     .toLowerCase()
-    .replace(/[™®©]/g, "")
+    .replace(/[\u2122\u00AE\u00A9]/g, "")
     .replace(/\([^)]*\)/g, " ")
     .replace(/\b\d+(?:\.\d+)?%\b/g, " ")
     .replace(/[^a-z0-9]+/g, "")
@@ -47,23 +48,36 @@ function mergeIngredient(prismaIngredient, fallbackIngredient) {
   const fallbackAliases = fallbackIngredient?.aliases || [];
   const aliases = [...new Set([...fallbackAliases, ...prismaAliases.map((entry) => entry.alias || entry)])];
 
-  return {
+  return ensureStructuredIngredientKnowledge({
     ...fallbackIngredient,
     ...(prismaIngredient || {}),
     aliases,
-    displayPurpose: prismaIngredient?.purpose || fallbackIngredient?.displayPurpose || fallbackIngredient?.purpose || "Unknown",
+    displayPurpose:
+      prismaIngredient?.displayPurpose ||
+      prismaIngredient?.purpose ||
+      fallbackIngredient?.displayPurpose ||
+      fallbackIngredient?.purpose ||
+      "Unknown",
     purpose: prismaIngredient?.purpose || fallbackIngredient?.purpose || "Unknown",
     riskLevel: prismaIngredient?.riskLevel || fallbackIngredient?.riskLevel || "UNKNOWN",
+    benefits: prismaIngredient?.benefits || fallbackIngredient?.benefits || [],
+    sideEffects: prismaIngredient?.sideEffects || fallbackIngredient?.sideEffects || [],
     comedogenicRating: prismaIngredient?.comedogenicRating ?? fallbackIngredient?.comedogenicRating ?? 0,
     irritationScore: prismaIngredient?.irritationScore ?? fallbackIngredient?.irritationScore ?? 0,
     suitableSkinTypes: prismaIngredient?.suitableSkinTypes || fallbackIngredient?.suitableSkinTypes || [],
     avoidSkinTypes: prismaIngredient?.avoidSkinTypes || fallbackIngredient?.avoidSkinTypes || [],
-    tags: fallbackIngredient?.tags || [],
-    riskFlags: fallbackIngredient?.riskFlags || [],
-    simpleExplanation: prismaIngredient?.simpleExplanation || fallbackIngredient?.simpleExplanation || "Ingredient knowledge base entry is incomplete.",
-    evidenceLevel: prismaIngredient?.evidenceLevel || fallbackIngredient?.evidenceLevel || "reference",
+    functions: prismaIngredient?.functions || fallbackIngredient?.functions || [],
+    helps: prismaIngredient?.helps || fallbackIngredient?.helps || [],
+    avoidFor: prismaIngredient?.avoidFor || fallbackIngredient?.avoidFor || [],
+    tags: prismaIngredient?.tags || fallbackIngredient?.tags || [],
+    riskFlags: prismaIngredient?.riskFlags || fallbackIngredient?.riskFlags || [],
+    simpleExplanation:
+      prismaIngredient?.simpleExplanation ||
+      fallbackIngredient?.simpleExplanation ||
+      "Ingredient knowledge base entry is incomplete.",
+    evidenceLevel: prismaIngredient?.evidenceLevel || fallbackIngredient?.evidenceLevel || null,
     references: prismaIngredient?.references || fallbackIngredient?.references || []
-  };
+  });
 }
 
 export async function getIngredientKnowledgeBase() {
@@ -88,7 +102,10 @@ export async function getIngredientKnowledgeBase() {
     }
   }
 
-  const fallbackMap = new Map(ingredientCatalog.map((ingredient) => [getLookupKey(ingredient.name), ingredient]));
+  const fallbackMap = new Map(ingredientCatalog.map((ingredient) => {
+    const enrichedIngredient = buildSeedIngredientKnowledge(ingredient);
+    return [getLookupKey(enrichedIngredient.name), enrichedIngredient];
+  }));
   const prismaMap = new Map(prismaIngredients.map((ingredient) => [getLookupKey(ingredient.name), ingredient]));
   const keys = new Set([...fallbackMap.keys(), ...prismaMap.keys()]);
 

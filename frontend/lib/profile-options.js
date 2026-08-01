@@ -1,22 +1,9 @@
-export const SKIN_TYPE_OPTIONS = [
+﻿export const SKIN_TYPE_OPTIONS = [
   { value: "DRY", label: "Dry", description: "Often feels tight and benefits from barrier support." },
   { value: "OILY", label: "Oily", description: "Prone to shine, congestion, or excess sebum." },
   { value: "COMBINATION", label: "Combination", description: "Oily in some zones and dry in others." },
   { value: "NORMAL", label: "Normal", description: "Balanced overall with fewer extreme reactions." },
   { value: "SENSITIVE", label: "Sensitive", description: "More reactive to fragrance, actives, or weather." }
-];
-
-export const HAIR_TYPE_OPTIONS = [
-  { value: "STRAIGHT", label: "Straight", description: "Lies flat with minimal curl pattern." },
-  { value: "WAVY", label: "Wavy", description: "Soft bends with some natural body." },
-  { value: "CURLY", label: "Curly", description: "Defined curl pattern that may need moisture balance." },
-  { value: "COILY", label: "Coily", description: "Tight coils that often benefit from richer nourishment." }
-];
-
-export const HAIR_DENSITY_OPTIONS = [
-  { value: "THIN", label: "Thin", description: "Less hair per area and can feel lightweight quickly." },
-  { value: "MEDIUM", label: "Medium", description: "Balanced fullness and average coverage." },
-  { value: "THICK", label: "Thick", description: "High overall density and fuller coverage." }
 ];
 
 export const SKIN_SENSITIVITY_OPTIONS = [
@@ -34,40 +21,11 @@ export const SKIN_CONCERN_OPTIONS = [
   { value: "DRYNESS", label: "Dryness" },
   { value: "EXCESS_OIL", label: "Excess Oil" },
   { value: "LARGE_PORES", label: "Large Pores" },
-  { value: "WRINKLES", label: "Wrinkles" },
   { value: "FINE_LINES", label: "Fine Lines" },
-  { value: "UNEVEN_SKIN_TONE", label: "Uneven Skin Tone" }
-];
-
-export const HAIR_CONCERN_OPTIONS = [
-  { value: "HAIR_FALL", label: "Hair Fall" },
-  { value: "DANDRUFF", label: "Dandruff" },
-  { value: "FRIZZ", label: "Frizz" },
-  { value: "DRY_HAIR", label: "Dry Hair" },
-  { value: "SPLIT_ENDS", label: "Split Ends" },
-  { value: "OILY_SCALP", label: "Oily Scalp" },
-  { value: "ITCHY_SCALP", label: "Itchy Scalp" },
-  { value: "HAIR_BREAKAGE", label: "Hair Breakage" }
-];
-
-export const ALLERGY_OPTIONS = [
-  { value: "FRAGRANCE", label: "Fragrance" },
-  { value: "ALCOHOL", label: "Alcohol" },
-  { value: "PARABENS", label: "Parabens" },
-  { value: "SULFATES", label: "Sulfates" },
-  { value: "ESSENTIAL_OILS", label: "Essential Oils" },
-  { value: "LANOLIN", label: "Lanolin" },
-  { value: "FORMALDEHYDE_RELEASERS", label: "Formaldehyde Releasers" },
-  { value: "LATEX", label: "Latex" },
-  { value: "NONE", label: "None" },
-  { value: "OTHER", label: "Other" }
-];
-
-export const MAKEUP_USAGE_OPTIONS = [
-  { value: "NEVER", label: "Never" },
-  { value: "OCCASIONALLY", label: "Occasionally" },
-  { value: "WEEKLY", label: "Weekly" },
-  { value: "DAILY", label: "Daily" }
+  { value: "WRINKLES", label: "Wrinkles" },
+  { value: "UNEVEN_SKIN_TONE", label: "Uneven Skin Tone" },
+  { value: "DULLNESS", label: "Dullness" },
+  { value: "DEHYDRATION", label: "Dehydration" }
 ];
 
 export const SKINCARE_GOAL_OPTIONS = [
@@ -75,10 +33,89 @@ export const SKINCARE_GOAL_OPTIONS = [
   { value: "BRIGHTENING", label: "Brightening" },
   { value: "ACNE_CONTROL", label: "Acne Control" },
   { value: "OIL_CONTROL", label: "Oil Control" },
-  { value: "ANTI_AGING", label: "Anti-Aging" },
   { value: "BARRIER_REPAIR", label: "Barrier Repair" },
+  { value: "ANTI_AGING", label: "Anti-Aging" },
+  { value: "EVEN_SKIN_TONE", label: "Even Skin Tone" },
+  { value: "REDUCE_REDNESS", label: "Reduce Redness" },
+  { value: "SMOOTH_TEXTURE", label: "Smooth Texture" }
+];
+
+export const ALLERGY_OPTIONS = [
+  { value: "FRAGRANCE", label: "Fragrance" },
+  { value: "ALCOHOL", label: "Alcohol" },
+  { value: "ESSENTIAL_OILS", label: "Essential Oils" },
+  { value: "PARABENS", label: "Parabens" },
+  { value: "SULFATES", label: "Sulfates" },
+  { value: "LANOLIN", label: "Lanolin" },
+  { value: "FORMALDEHYDE_RELEASERS", label: "Formaldehyde Releasers" },
+  { value: "NONE", label: "None" },
+  { value: "OTHER", label: "Other" }
+];
+
+export const HAIR_TYPE_OPTIONS = [
+  { value: "STRAIGHT", label: "Straight", description: "Lies flat with minimal curl pattern." },
+  { value: "WAVY", label: "Wavy", description: "Soft bends with some natural body." },
+  { value: "CURLY", label: "Curly", description: "Defined curl pattern that may need moisture balance." },
+  { value: "COILY", label: "Coily", description: "Tight coils that often benefit from richer nourishment." }
+];
+
+export const SCALP_TYPE_OPTIONS = [
+  { value: "DRY", label: "Dry" },
+  { value: "OILY", label: "Oily" },
+  { value: "NORMAL", label: "Normal" },
+  { value: "COMBINATION", label: "Combination" },
+  { value: "SENSITIVE", label: "Sensitive" }
+];
+
+export const HAIR_CONCERN_OPTIONS = [
+  { value: "DANDRUFF", label: "Dandruff" },
+  { value: "HAIR_FALL", label: "Hair Fall" },
+  { value: "DRY_HAIR", label: "Dry Hair" },
+  { value: "FRIZZ", label: "Frizz" },
+  { value: "SPLIT_ENDS", label: "Split Ends" },
+  { value: "OILY_SCALP", label: "Oily Scalp" },
+  { value: "ITCHY_SCALP", label: "Itchy Scalp" },
+  { value: "HAIR_BREAKAGE", label: "Hair Breakage" },
+  { value: "THIN_HAIR", label: "Thin Hair" },
+  { value: "COLOR_DAMAGED_HAIR", label: "Color-Damaged Hair" }
+];
+
+export const HAIRCARE_GOAL_OPTIONS = [
+  { value: "DANDRUFF_CONTROL", label: "Dandruff Control" },
   { value: "HAIR_GROWTH", label: "Hair Growth" },
-  { value: "HAIR_SMOOTHENING", label: "Hair Smoothening" }
+  { value: "FRIZZ_CONTROL", label: "Frizz Control" },
+  { value: "REPAIR_DAMAGE", label: "Repair Damage" },
+  { value: "DEEP_HYDRATION", label: "Deep Hydration" },
+  { value: "STRENGTHEN_HAIR", label: "Strengthen Hair" },
+  { value: "SHINE", label: "Shine" },
+  { value: "SMOOTH_HAIR", label: "Smooth Hair" },
+  { value: "VOLUME", label: "Volume" },
+  { value: "SCALP_HEALTH", label: "Scalp Health" }
+];
+
+export const AVOID_INGREDIENT_OPTIONS = [
+  { value: "SULFATES", label: "Sulfates" },
+  { value: "SILICONES", label: "Silicones" },
+  { value: "DRYING_ALCOHOLS", label: "Drying Alcohols" },
+  { value: "FRAGRANCE", label: "Fragrance" },
+  { value: "ESSENTIAL_OILS", label: "Essential Oils" },
+  { value: "MINERAL_OIL", label: "Mineral Oil" },
+  { value: "PARABENS", label: "Parabens" },
+  { value: "NONE", label: "None" },
+  { value: "OTHER", label: "Other" }
+];
+
+export const HAIR_DENSITY_OPTIONS = [
+  { value: "THIN", label: "Thin", description: "Less hair per area and can feel lightweight quickly." },
+  { value: "MEDIUM", label: "Medium", description: "Balanced fullness and average coverage." },
+  { value: "THICK", label: "Thick", description: "High overall density and fuller coverage." }
+];
+
+export const MAKEUP_USAGE_OPTIONS = [
+  { value: "NEVER", label: "Never" },
+  { value: "OCCASIONALLY", label: "Occasionally" },
+  { value: "WEEKLY", label: "Weekly" },
+  { value: "DAILY", label: "Daily" }
 ];
 
 export const AGE_GROUP_OPTIONS = [
@@ -98,15 +135,19 @@ export const GENDER_OPTIONS = [
 
 export const DEFAULT_PROFILE_FORM = {
   skinType: "",
-  hairType: "",
-  hairDensity: "",
   skinSensitivity: "",
   primarySkinConcerns: [],
-  hairConcerns: [],
+  primarySkincareGoals: [],
   cosmeticAllergies: [],
   otherAllergy: "",
-  makeupUsage: "",
-  primarySkincareGoals: [],
+  hairType: "",
+  scalpType: "",
+  hairConcerns: [],
+  haircareGoals: [],
+  avoidIngredients: [],
+  otherAvoidIngredient: "",
+  hairDensity: "MEDIUM",
+  makeupUsage: "OCCASIONALLY",
   ageGroup: "",
   gender: ""
 };
@@ -115,70 +156,56 @@ export const PROFILE_QUESTION_STEPS = [
   {
     field: "skinType",
     type: "single",
-    title: "What best describes your skin type?",
-    description: "This becomes one of the strongest signals in DermIntel's suitability engine."
-  },
-  {
-    field: "hairType",
-    type: "single",
-    title: "Which hair type feels most accurate today?",
-    description: "This helps us keep future scalp and hair recommendations relevant too."
-  },
-  {
-    field: "hairDensity",
-    type: "single",
-    title: "How would you describe your hair density?",
-    description: "Density helps us interpret how rich or lightweight a formula should feel."
+    title: "What is your skin type?"
   },
   {
     field: "skinSensitivity",
     type: "single",
-    title: "How reactive is your skin to new products?",
-    description: "We use this to surface irritation warnings earlier and more clearly."
+    title: "How sensitive is your skin?"
   },
   {
     field: "primarySkinConcerns",
     type: "multi",
-    title: "Which skin concerns matter most right now?",
-    description: "Choose the issues you want DermIntel to prioritize in its verdicts."
-  },
-  {
-    field: "hairConcerns",
-    type: "multi",
-    title: "What hair concerns should we keep in mind?",
-    description: "These will guide future scalp and haircare suggestions."
-  },
-  {
-    field: "cosmeticAllergies",
-    type: "multi",
-    title: "Do you avoid any cosmetic triggers or allergens?",
-    description: "We will flag formulas that overlap with these watchouts."
-  },
-  {
-    field: "makeupUsage",
-    type: "single",
-    title: "How often do you wear makeup?",
-    description: "This helps us balance ingredient recommendations with real-world habits."
+    title: "What are your top skin concerns?"
   },
   {
     field: "primarySkincareGoals",
     type: "multi",
-    title: "What are your main skincare goals?",
-    description: "These goals help us rank products beyond basic safety."
+    title: "What are your skincare goals?"
   },
   {
-    field: "ageGroup",
-    type: "single",
-    title: "Which age group do you fall into?",
-    description: "Optional. This helps personalize how we frame long-term skin goals.",
-    optional: true
+    field: "cosmeticAllergies",
+    type: "multi",
+    title: "Do you have any ingredient allergies or sensitivities?",
+    otherField: "otherAllergy",
+    otherLabel: "Tell us the ingredient allergy or sensitivity"
   },
   {
-    field: "gender",
+    field: "hairType",
     type: "single",
-    title: "How would you like gender represented on your profile?",
-    description: "Optional. You can skip this and continue without affecting analysis quality.",
-    optional: true
+    title: "What best describes your hair type?"
+  },
+  {
+    field: "scalpType",
+    type: "single",
+    title: "What is your scalp type?"
+  },
+  {
+    field: "hairConcerns",
+    type: "multi",
+    title: "What are your top hair or scalp concerns?"
+  },
+  {
+    field: "haircareGoals",
+    type: "multi",
+    title: "What are your haircare goals?"
+  },
+  {
+    field: "avoidIngredients",
+    type: "multi",
+    title: "Which product ingredients do you prefer to avoid?",
+    otherField: "otherAvoidIngredient",
+    otherLabel: "Tell us the ingredient you prefer to avoid"
   }
 ];
 
