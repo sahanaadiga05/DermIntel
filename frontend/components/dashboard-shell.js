@@ -242,7 +242,7 @@ export function DashboardShell() {
               <p className="truncate text-sm font-semibold text-white sm:text-base">
                 Welcome back, {user?.name || "DermIntel member"}
               </p>
-              <p className="mt-1 text-sm text-white/70">
+              <p className="mt-1 text-sm text-white">
                 Analyze cosmetic products intelligently.
               </p>
             </div>
@@ -363,7 +363,7 @@ export function DashboardShell() {
               </div>
 
               <div className="min-w-0 overflow-hidden rounded-[24px] bg-pine p-5 text-white">
-                <div className="flex items-center gap-2 text-sm font-medium text-white/70">
+                <div className="flex items-center gap-2 text-sm font-medium text-white">
                   <Sparkles className="h-4 w-4" />
                   Personalized verdict
                 </div>
@@ -423,7 +423,13 @@ export function DashboardShell() {
 
       <div className="mt-5 grid min-w-0 gap-5">
         {result ? (
-          <SectionCard title="Signals details" eyebrow="Positives & watchouts">
+          <section className="min-w-0 overflow-hidden rounded-[28px] border border-ink/8 bg-white p-5 shadow-panel sm:p-6">
+            <div className="mb-5">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.3em] text-pine/60">
+                Positives & watchouts
+              </p>
+              <h2 className="display-type text-2xl font-semibold text-ink">Signals details</h2>
+            </div>
             <div className="grid min-w-0 gap-4 lg:grid-cols-2">
               <InfoList
                 icon={<ShieldCheck className="h-4 w-4" />}
@@ -437,17 +443,23 @@ export function DashboardShell() {
                 title="Watchouts"
                 items={result?.cons}
                 emptyMessage="No major warning flags detected."
-                tone="amber"
+                tone="emerald"
               />
             </div>
-          </SectionCard>
+          </section>
         ) : null}
-        <SectionCard title="Your personalized verdict" eyebrow="Analysis result">
+        <SectionCard
+          title="Your personalized verdict"
+          eyebrow="Analysis result"
+          className="!border-white/10 !bg-[linear-gradient(160deg,rgba(24,60,45,0.98),rgba(16,35,26,0.92))]"
+          eyebrowClassName="text-white/65"
+          titleClassName="text-white"
+        >
           {result ? (
             <div className="space-y-4">
               <IngredientBreakdownCard result={result} />
 
-              <div className="rounded-[28px] border border-ink/8 bg-white/72 p-5">
+              <div className="rounded-[28px] border border-white/12 bg-white/90 p-5">
                 <p className="text-sm font-semibold text-ink">Unknown ingredients</p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {(result?.unknownIngredients?.length
@@ -523,7 +535,7 @@ function IngredientBreakdownCard({ result }) {
   }
 
   return (
-    <div className="rounded-[28px] border border-ink/8 bg-white/72 p-5">
+    <div className="rounded-[28px] border border-white/12 bg-white/90 p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-sm font-semibold text-ink">Estimated ingredient list</p>
@@ -534,8 +546,8 @@ function IngredientBreakdownCard({ result }) {
       </div>
 
       <div className="no-scrollbar mt-4 max-w-full overflow-x-auto rounded-[22px] border border-ink/8 bg-white/80">
-        <table className="min-w-[940px] divide-y divide-ink/8 text-sm">
-          <thead className="bg-mist/70 text-left text-xs uppercase tracking-[0.18em] text-pine/62">
+        <table className="w-full min-w-[940px] divide-y divide-pine/30 text-sm">
+          <thead className="bg-pine text-left text-xs uppercase tracking-[0.18em] text-white">
             <tr>
               <th className="px-4 py-3 font-semibold">Ingredient</th>
               <th className="px-4 py-3 font-semibold">Purpose</th>
@@ -544,7 +556,7 @@ function IngredientBreakdownCard({ result }) {
               <th className="px-4 py-3 font-semibold">Suitability</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-ink/6">
+          <tbody className="divide-y divide-pine/30">
             {rows.map((row) => {
               const isExpanded = expandedIngredient === row.name;
 
@@ -612,9 +624,9 @@ function IngredientBreakdownCard({ result }) {
 
 function IngredientDetail({ label, value }) {
   return (
-    <div className="rounded-2xl border border-ink/8 bg-white/80 px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-pine/56">{label}</p>
-      <p className="mt-2 text-sm leading-6 text-ink/72">{value || "Not available yet."}</p>
+    <div className="rounded-2xl border border-[#1B5E20] bg-[#1B5E20] px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white">{label}</p>
+      <p className="mt-2 text-sm leading-6 text-white">{value || "Not available yet."}</p>
     </div>
   );
 }
@@ -622,22 +634,23 @@ function IngredientDetail({ label, value }) {
 function InfoList({ icon, title, items = [], emptyMessage, tone, compact = false }) {
   const toneClass =
     tone === "emerald"
-      ? "bg-emerald-50 text-emerald-700"
-      : "bg-amber-50 text-amber-700";
+      ? "bg-white/10 text-white border border-white/15"
+      : "bg-white/10 text-white border border-white/15";
+  const itemClass = "bg-white text-ink";
 
   return (
-    <div className={`rounded-[28px] border border-ink/8 bg-white/72 ${compact ? "p-4" : "p-5"}`}>
+    <div className={`rounded-[28px] border border-white/10 bg-[linear-gradient(160deg,rgba(24,60,45,0.98),rgba(16,35,26,0.92))] ${compact ? "p-4" : "p-5"}`}>
       <div
         className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.22em] ${toneClass}`}
         >
         {icon}
         {title}
       </div>
-      <div className={`text-sm text-ink/72 ${compact ? "mt-3 space-y-2" : "mt-4 space-y-3"}`}>
+      <div className={`text-sm ${compact ? "mt-3 space-y-2" : "mt-4 space-y-3"}`}>
         {(items.length ? items : [emptyMessage]).map((item) => (
           <p
             key={item}
-            className={`rounded-2xl bg-mist leading-6 ${compact ? "px-3 py-2.5" : "px-4 py-3"}`}
+            className={`rounded-2xl leading-6 ${compact ? "px-3 py-2.5" : "px-4 py-3"} ${itemClass}`}
             >
             {item}
           </p>
@@ -1027,6 +1040,12 @@ function getResolutionActions(meta = {}) {
 
   return actions;
 }
+
+
+
+
+
+
 
 
 
