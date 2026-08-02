@@ -7,7 +7,6 @@ import {
   Link2,
   LoaderCircle,
   LogOut,
-  Search,
   ShieldCheck,
   Sparkles,
   ChevronDown,
@@ -25,7 +24,6 @@ import {
   SKIN_SENSITIVITY_OPTIONS,
   SKIN_TYPE_OPTIONS
 } from "@/lib/profile-options";
-import { products } from "@/lib/mock-data";
 import { useSessionStore } from "@/store/use-session-store";
 import { BrandMark } from "@/components/brand-mark";
 import { ScoreDonut } from "@/components/score-donut";
@@ -34,7 +32,6 @@ import { SectionCard } from "@/components/section-card";
 export function DashboardShell() {
   const router = useRouter();
   const { user, profile, signOut } = useSessionStore();
-  const [searchQuery, setSearchQuery] = useState("");
   const [productUrl, setProductUrl] = useState("");
   const [manualIngredients, setManualIngredients] = useState("");
   const [result, setResult] = useState(null);
@@ -63,7 +60,6 @@ export function DashboardShell() {
     analysisMeta?.image || result?.product?.image || result?.product?.imageUrl || "";
 
   async function handleAnalyze({
-    nextSearchQuery = searchQuery,
     nextProductUrl = productUrl,
     nextManualIngredients = manualIngredients
   } = {}) {
@@ -71,12 +67,11 @@ export function DashboardShell() {
       return;
     }
 
-    const trimmedSearch = nextSearchQuery.trim();
     const trimmedUrl = nextProductUrl.trim();
     const trimmedIngredients = nextManualIngredients.trim();
 
-    if (!trimmedSearch && !trimmedUrl && !trimmedIngredients) {
-      setInputError("Paste a product URL, type a product name, or paste ingredients to analyze.");
+    if (!trimmedUrl && !trimmedIngredients) {
+      setInputError("Paste a product URL or paste ingredients to analyze.");
       return;
     }
 
@@ -92,8 +87,8 @@ export function DashboardShell() {
             message: "Starting verified ingredient search..."
           }
         : {
-            channel: trimmedIngredients ? "manual" : "search",
-            label: trimmedSearch || "Custom Ingredient List",
+            channel: "manual",
+            label: "Custom Ingredient List",
             processingTrace: buildPendingAnalysisTrace(Boolean(trimmedIngredients)),
             ingredientsText: trimmedIngredients,
             ingredientList: normalizeVerifiedIngredientList(trimmedIngredients),
@@ -102,11 +97,11 @@ export function DashboardShell() {
     );
 
     try {
-      let resolvedProductName = trimmedSearch;
+      let resolvedProductName = "";
       let resolvedIngredients = trimmedIngredients;
       let nextMeta = {
-        channel: trimmedUrl ? "url" : trimmedIngredients ? "manual" : "search",
-        label: trimmedUrl || trimmedSearch || "Custom Ingredient List",
+        channel: trimmedUrl ? "url" : "manual",
+        label: trimmedUrl || "Custom Ingredient List",
         processingTrace: buildPendingAnalysisTrace(Boolean(trimmedIngredients)),
             ingredientsText: trimmedIngredients,
         ingredientList: normalizeVerifiedIngredientList(trimmedIngredients)
@@ -118,7 +113,7 @@ export function DashboardShell() {
         });
         const resolution = response.data;
 
-        resolvedProductName = resolution.product?.name || trimmedSearch;
+        resolvedProductName = resolution.product?.name || "";
         resolvedIngredients = resolution.ingredientsText || trimmedIngredients;
         nextMeta = {
           channel: "url",
@@ -164,7 +159,7 @@ export function DashboardShell() {
 
       if (!resolvedProductName && !resolvedIngredients) {
         setResult(null);
-        setInputError("We still need a product name or ingredient list to analyze.");
+        setInputError("We still need verified ingredients to analyze.");
         return;
       }
 
@@ -239,7 +234,7 @@ export function DashboardShell() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.45 }}
         className="mb-5 overflow-hidden rounded-[26px] border border-white/50 bg-[linear-gradient(135deg,rgba(24,60,45,0.98),rgba(16,35,26,0.9))] px-4 py-4 text-white shadow-panel sm:px-6"
-      >
+        >
         <div className="flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3 sm:gap-4">
             <BrandMark tone="dark" />
@@ -300,14 +295,14 @@ export function DashboardShell() {
                   type="button"
                   onClick={handleEditSkinProfile}
                   className="inline-flex w-full items-center justify-center rounded-full border border-white/18 bg-white px-4 py-3 text-sm font-semibold text-pine transition hover:bg-white/92"
-                >
+                  >
                   Edit Skin Profile
                 </button>
                 <button
                   type="button"
                   onClick={handleSignOut}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/18 bg-white/8 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/12"
-                >
+                  >
                   <LogOut className="h-4 w-4" />
                   Sign Out
                 </button>
@@ -336,23 +331,6 @@ export function DashboardShell() {
                   </div>
                 </label>
 
-                <label className="block">
-                  <span className="mb-2 block text-sm font-medium text-ink/70">
-                    Manual product search
-                  </span>
-                  <input
-                    list="catalog-products"
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    className="w-full min-w-0 rounded-2xl border border-ink/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-pine focus:ring-4 focus:ring-pine/5"
-                    placeholder="Type a face wash, serum, sunscreen, shampoo..."
-                  />
-                  <datalist id="catalog-products">
-                    {products.map((product) => (
-                      <option key={product.id} value={product.name} />
-                    ))}
-                  </datalist>
-                </label>
 
                 <label className="block">
                   <span className="mb-2 block text-sm font-medium text-ink/70">
@@ -378,12 +356,8 @@ export function DashboardShell() {
                   onClick={() => handleAnalyze()}
                   disabled={isAnalyzing}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-pine px-6 py-3 text-sm font-semibold text-white shadow-panel transition hover:translate-y-[-1px] disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {isAnalyzing ? (
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Search className="h-4 w-4" />
-                  )}
+                  >
+                  <LoaderCircle className={`h-4 w-4 ${isAnalyzing ? "animate-spin" : ""}`} />
                   {isAnalyzing ? "Analyzing formula..." : "Analyze now"}
                 </button>
               </div>
@@ -407,7 +381,7 @@ export function DashboardShell() {
                 ) : null}
                 <p className="mt-3 text-sm leading-6 text-white/76">
                   {result?.explanation || result?.verdict ||
-                    "Paste a link, type a product name, or paste ingredients to start a stricter analysis."}
+                    "Paste a link or paste ingredients to start a stricter analysis."}
                 </p>
               </div>
             </div>
@@ -415,26 +389,42 @@ export function DashboardShell() {
         </div>
       </div>
 
-      <SectionCard title="Formula snapshot" eyebrow="Scores & signals" className="mt-5">
+      <section className="mt-5 min-w-0 overflow-hidden rounded-[28px] bg-[linear-gradient(160deg,rgba(24,60,45,0.98),rgba(16,35,26,0.92))] p-5 shadow-panel sm:p-6">
+        <div className="mb-5">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.3em] text-white/65">
+            Scores & signals
+          </p>
+          <h2 className="display-type text-2xl font-semibold text-white">Formula snapshot</h2>
+        </div>
         {result && scoreSummary ? (
-          <>
-            <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-12">
-              <div className="min-w-0 md:col-span-6">
+          <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-12">
+            <div className="min-w-0 md:col-span-6">
               <ScoreMetricCard
                 label="Safety"
                 value={scoreSummary.safety}
                 status={scoreSummary.safetyStatus}
               />
-              </div>
-              <div className="min-w-0 md:col-span-6">
+            </div>
+            <div className="min-w-0 md:col-span-6">
               <ScoreMetricCard
                 label="Suitability"
                 value={scoreSummary.suitability}
                 status={scoreSummary.suitabilityStatus}
               />
-              </div>
             </div>
-            <div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-2">
+          </div>
+        ) : (
+          <p className="text-center text-sm leading-6 text-white/72">
+            A score appears only after DermIntel has verified ingredients from the product page,
+            a trusted source, or from ingredients you pasted manually.
+          </p>
+        )}
+      </section>
+
+      <div className="mt-5 grid min-w-0 gap-5">
+        {result ? (
+          <SectionCard title="Signals details" eyebrow="Positives & watchouts">
+            <div className="grid min-w-0 gap-4 lg:grid-cols-2">
               <InfoList
                 icon={<ShieldCheck className="h-4 w-4" />}
                 title="Top positives"
@@ -450,20 +440,8 @@ export function DashboardShell() {
                 tone="amber"
               />
             </div>
-            <p className="mt-4 text-sm leading-6 text-ink/56">
-              Scores are calculated using ingredient safety, irritation risk, comedogenic rating,
-              uncertainty, and your personalized skin profile.
-            </p>
-          </>
-        ) : (
-          <p className="text-center text-sm leading-6 text-ink/58">
-            A score appears only after DermIntel has verified ingredients from the product page,
-            a trusted source, or from ingredients you pasted manually.
-          </p>
-        )}
-      </SectionCard>
-
-      <div className="mt-5 grid min-w-0 gap-5">
+          </SectionCard>
+        ) : null}
         <SectionCard title="Your personalized verdict" eyebrow="Analysis result">
           {result ? (
             <div className="space-y-4">
@@ -478,7 +456,7 @@ export function DashboardShell() {
                     <span
                       key={ingredient}
                       className="rounded-full bg-coral/10 px-3 py-2 text-xs font-medium uppercase tracking-[0.12em] text-coral"
-                    >
+                      >
                       {ingredient}
                     </span>
                   ))}
@@ -499,7 +477,7 @@ export function DashboardShell() {
               <article
                 key={product.id}
                 className="lift-card min-w-0 rounded-[24px] border border-ink/8 bg-white/72 p-5"
-              >
+                >
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-pine/56">
                   {product.category}
                 </p>
@@ -521,14 +499,15 @@ function ScoreMetricCard({ label, value, status }) {
     <motion.div
       whileHover={{ y: -2, scale: 1.01 }}
       transition={{ duration: 0.2 }}
-      className="bento-card lift-card flex min-h-[260px] w-full min-w-0 flex-col items-center justify-center rounded-[26px] px-4 py-5 text-center"
-    >
+      className="bento-card lift-card flex min-h-[260px] w-full min-w-0 flex-col items-center justify-center rounded-[26px] border border-ink/8 bg-white px-4 py-5 text-center"
+      style={{ background: "#ffffff" }}
+      >
       <ScoreDonut value={value} size={152} />
       <p className="mt-4 text-sm font-semibold text-ink">{label}</p>
       <p className="mt-1 text-2xl font-semibold text-ink">{value}</p>
       <span
         className={`mt-3 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${badgeClass}`}
-      >
+        >
         {status}
       </span>
     </motion.div>
@@ -574,7 +553,7 @@ function IngredientBreakdownCard({ result }) {
                   <tr
                     className="cursor-pointer transition hover:bg-mist/45"
                     onClick={() => toggleIngredient(row.name)}
-                  >
+                    >
                     <td className="px-4 py-3">
                       <div className="flex items-start justify-between gap-3">
                         <div>
@@ -592,14 +571,14 @@ function IngredientBreakdownCard({ result }) {
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${getRiskBadgeClass(row.riskLevel)}`}
-                      >
+                        >
                         {row.riskLevel}
                       </span>
                     </td>
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${getSuitabilityBadgeClass(row.suitability)}`}
-                      >
+                        >
                         {row.suitability}
                       </span>
                     </td>
@@ -650,7 +629,7 @@ function InfoList({ icon, title, items = [], emptyMessage, tone, compact = false
     <div className={`rounded-[28px] border border-ink/8 bg-white/72 ${compact ? "p-4" : "p-5"}`}>
       <div
         className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.22em] ${toneClass}`}
-      >
+        >
         {icon}
         {title}
       </div>
@@ -659,7 +638,7 @@ function InfoList({ icon, title, items = [], emptyMessage, tone, compact = false
           <p
             key={item}
             className={`rounded-2xl bg-mist leading-6 ${compact ? "px-3 py-2.5" : "px-4 py-3"}`}
-          >
+            >
             {item}
           </p>
         ))}
@@ -975,7 +954,7 @@ function getScoreBadgeClass(status) {
   }
 
   if (status === "Moderate") {
-    return "bg-amber-50 text-amber-700";
+    return "bg-emerald-50 text-emerald-700";
   }
 
   return "bg-coral/12 text-coral";
@@ -1048,6 +1027,14 @@ function getResolutionActions(meta = {}) {
 
   return actions;
 }
+
+
+
+
+
+
+
+
 
 
 

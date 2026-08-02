@@ -4,7 +4,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 
 const COLORS = {
   high: "#1b5e20",
-  medium: "#f0c05b",
+  medium: "#2f7d32",
   low: "#ff8b61",
   track: "rgba(16, 35, 26, 0.08)"
 };
@@ -55,3 +55,4 @@ export function ScoreDonut({ value, size = 152 }) {
     </div>
   );
 }
+
