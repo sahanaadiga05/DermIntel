@@ -58,6 +58,10 @@ export function DashboardShell() {
 
   const verdictProductImage =
     analysisMeta?.image || result?.product?.image || result?.product?.imageUrl || "";
+  const verdictPoints = useMemo(
+    () => formatVerdictPoints(result?.explanation || result?.verdict || ""),
+    [result?.explanation, result?.verdict]
+  );
 
   async function handleAnalyze({
     nextProductUrl = productUrl,
@@ -362,7 +366,7 @@ export function DashboardShell() {
                 </button>
               </div>
 
-              <div className="min-w-0 overflow-hidden rounded-[24px] bg-pine p-5 text-white">
+              <div className="min-w-0 self-start overflow-hidden rounded-[24px] bg-pine p-5 text-white xl:-mt-14">
                 <div className="flex items-center gap-2 text-sm font-medium text-white">
                   <Sparkles className="h-4 w-4" />
                   Personalized verdict
@@ -379,10 +383,20 @@ export function DashboardShell() {
                     />
                   </div>
                 ) : null}
-                <p className="mt-3 text-sm leading-6 text-white/76">
-                  {result?.explanation || result?.verdict ||
-                    "Paste a link or paste ingredients to start a stricter analysis."}
-                </p>
+                {verdictPoints.length ? (
+                  <ul className="mt-3 space-y-2 text-sm leading-6 text-white/[0.76]">
+                    {verdictPoints.map((point, index) => (
+                      <li key={`${index}-${point.slice(0, 24)}`} className="flex gap-2">
+                        <span className="mt-[0.45rem] h-1.5 w-1.5 flex-none rounded-full bg-white/[0.76]" />
+                        <span>{point}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-sm leading-6 text-white/[0.76]">
+                    Paste a link or paste ingredients to start a stricter analysis.
+                  </p>
+                )}
               </div>
             </div>
           </SectionCard>
@@ -391,7 +405,7 @@ export function DashboardShell() {
 
       <section className="mt-5 min-w-0 overflow-hidden rounded-[28px] bg-[linear-gradient(160deg,rgba(24,60,45,0.98),rgba(16,35,26,0.92))] p-5 shadow-panel sm:p-6">
         <div className="mb-5">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.3em] text-white/65">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.3em] text-white/[0.65]">
             Scores & signals
           </p>
           <h2 className="display-type text-2xl font-semibold text-white">Formula snapshot</h2>
@@ -414,7 +428,7 @@ export function DashboardShell() {
             </div>
           </div>
         ) : (
-          <p className="text-center text-sm leading-6 text-white/72">
+          <p className="text-left text-sm leading-6 text-white/[0.72]">
             A score appears only after DermIntel has verified ingredients from the product page,
             a trusted source, or from ingredients you pasted manually.
           </p>
@@ -452,7 +466,7 @@ export function DashboardShell() {
           title="Your personalized verdict"
           eyebrow="Analysis result"
           className="!border-white/10 !bg-[linear-gradient(160deg,rgba(24,60,45,0.98),rgba(16,35,26,0.92))]"
-          eyebrowClassName="text-white/65"
+          eyebrowClassName="text-white/[0.65]"
           titleClassName="text-white"
         >
           {result ? (
@@ -476,28 +490,11 @@ export function DashboardShell() {
               </div>
             </div>
           ) : (
-            <p className="text-sm leading-6 text-ink/62">
+            <p className="text-sm leading-6 text-white/[0.72]">
               DermIntel needs verified ingredients from a real product page or from your manual
               ingredient paste before it can generate a verdict.
             </p>
           )}
-        </SectionCard>
-
-        <SectionCard title="Better-matched alternatives" eyebrow="Recommendations">
-          <div className="grid gap-4 md:grid-cols-3">
-            {(result?.alternatives || []).map((product) => (
-              <article
-                key={product.id}
-                className="lift-card min-w-0 rounded-[24px] border border-ink/8 bg-white/72 p-5"
-                >
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-pine/56">
-                  {product.category}
-                </p>
-                <h3 className="mt-3 text-lg font-semibold text-ink">{product.name}</h3>
-                <p className="mt-2 text-sm text-ink/62">{product.brand}</p>
-              </article>
-            ))}
-          </div>
         </SectionCard>
       </div>
     </main>
@@ -547,7 +544,7 @@ function IngredientBreakdownCard({ result }) {
 
       <div className="no-scrollbar mt-4 max-w-full overflow-x-auto rounded-[22px] border border-ink/8 bg-white/80">
         <table className="w-full min-w-[940px] divide-y divide-pine/30 text-sm">
-          <thead className="bg-pine text-left text-xs uppercase tracking-[0.18em] text-white">
+          <thead className="bg-[#1e3e31] text-left text-xs uppercase tracking-[0.18em] text-white">
             <tr>
               <th className="px-4 py-3 font-semibold">Ingredient</th>
               <th className="px-4 py-3 font-semibold">Purpose</th>
@@ -596,7 +593,7 @@ function IngredientBreakdownCard({ result }) {
                     </td>
                   </tr>
                   {isExpanded ? (
-                    <tr className="bg-mist/30">
+                    <tr className="bg-transparent">
                       <td colSpan={5} className="px-4 py-4">
                         <div className="grid gap-4 md:grid-cols-2">
                           <IngredientDetail label="Benefits" value={row.details?.benefits || row.explanation} />
@@ -624,9 +621,9 @@ function IngredientBreakdownCard({ result }) {
 
 function IngredientDetail({ label, value }) {
   return (
-    <div className="rounded-2xl border border-[#1B5E20] bg-[#1B5E20] px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white">{label}</p>
-      <p className="mt-2 text-sm leading-6 text-white">{value || "Not available yet."}</p>
+    <div className="rounded-2xl border border-[#1B5E20]/10 bg-[#edf6ee] px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#1B5E20]">{label}</p>
+      <p className="mt-2 text-sm leading-6 text-ink">{value || "Not available yet."}</p>
     </div>
   );
 }
@@ -658,6 +655,26 @@ function InfoList({ icon, title, items = [], emptyMessage, tone, compact = false
       </div>
     </div>
   );
+}
+
+function formatVerdictPoints(value) {
+  const normalized = String(value || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\s*\|\s*/g, "\n")
+    .replace(/,\s+([^,\n]+ stand out as the main strengths\.)/gi, "\n$1")
+    .replace(/\.\s+([^\.\n]+ create the biggest tradeoffs\.)/gi, ".\n$1")
+    .replace(/^[-*\u2022]\s*/gm, "")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+
+  if (!normalized) {
+    return [];
+  }
+
+  return normalized
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
 function normalizeVerifiedIngredientList(value) {
@@ -1040,23 +1057,6 @@ function getResolutionActions(meta = {}) {
 
   return actions;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

@@ -28,23 +28,23 @@ function formatCodeLabel(value = "") {
     .replaceAll("_", " ");
 }
 
-function buildProfileSummary(profile = {}) {
-  const parts = [];
+function buildProfilePoints(profile = {}) {
+  const points = [];
 
   if (profile.skinType) {
-    parts.push(`${formatCodeLabel(profile.skinType)} skin`);
+    points.push(`Skin type: ${formatCodeLabel(profile.skinType)}`);
   }
 
   if (profile.skinSensitivity && profile.skinSensitivity !== "NOT_SENSITIVE") {
-    parts.push(`${formatCodeLabel(profile.skinSensitivity)} sensitivity`);
+    points.push(`Sensitivity: ${formatCodeLabel(profile.skinSensitivity)}`);
   }
 
   if (Array.isArray(profile.concerns) && profile.concerns.length) {
-    parts.push(`concerns: ${toSentenceList(profile.concerns.map(formatCodeLabel).slice(0, 3))}`);
+    points.push(`Concerns: ${toSentenceList(profile.concerns.map(formatCodeLabel).slice(0, 3))}`);
   }
 
   if (Array.isArray(profile.goals) && profile.goals.length) {
-    parts.push(`goals: ${toSentenceList(profile.goals.map(formatCodeLabel).slice(0, 3))}`);
+    points.push(`Goals: ${toSentenceList(profile.goals.map(formatCodeLabel).slice(0, 3))}`);
   }
 
   if (Array.isArray(profile.avoidIngredients) && profile.avoidIngredients.length) {
@@ -53,25 +53,36 @@ function buildProfileSummary(profile = {}) {
       .map(formatCodeLabel);
 
     if (avoids.length) {
-      parts.push(`avoid: ${toSentenceList(avoids.slice(0, 3))}`);
+      points.push(`Avoid ingredients: ${toSentenceList(avoids.slice(0, 3))}`);
     }
   }
 
-  return parts.join(" | ");
+  return points;
 }
 
 function buildFallbackExplanation({ result, profile }) {
   const strengths = result.strengths || [];
   const weaknesses = result.weaknesses || [];
-  const profileSummary = buildProfileSummary(profile);
-  const strengthsText = strengths.length
-    ? `${toSentenceList(strengths)} stand out as the main strengths.`
-    : "No single ingredient dominated the upside, but the formula still had enough supportive signals to score positively.";
-  const weaknessesText = weaknesses.length
-    ? `${toSentenceList(weaknesses)} create the biggest tradeoffs.`
-    : "No major ingredient-level tradeoffs stood out in the final score.";
+  const profilePoints = buildProfilePoints(profile);
+  const lines = [
+    `${result.productName || "This formula"} scored ${result.score}/100 overall, with a safety score of ${result.safetyScore}/100 and a suitability score of ${result.suitabilityScore}/100.`
+  ];
 
-  return `${result.productName || "This formula"} scored ${result.score}/100 overall, with a safety score of ${result.safetyScore}/100 and a suitability score of ${result.suitabilityScore}/100. ${profileSummary ? `For ${profileSummary}, ` : ""}${strengthsText} ${weaknessesText}`.trim();
+  lines.push(...profilePoints);
+
+  lines.push(
+    strengths.length
+      ? `Main strengths: ${toSentenceList(strengths)}.`
+      : "Main strengths: no single ingredient dominated the upside, but the formula still had enough supportive signals to score positively."
+  );
+
+  lines.push(
+    weaknesses.length
+      ? `Biggest tradeoffs: ${toSentenceList(weaknesses)}.`
+      : "Biggest tradeoffs: no major ingredient-level tradeoffs stood out in the final score."
+  );
+
+  return lines.map((line) => `- ${line}`).join("\n");
 }
 
 function buildOpenAiRequestBody({ model, systemPrompt, userPrompt }) {
@@ -155,13 +166,14 @@ async function generateOpenAiExplanation({ result, profile }) {
     "You are DermIntel's explanation layer.",
     "The scores, verdict, strengths, and weaknesses are already computed by the backend.",
     "Do not recalculate, override, or reinterpret the numeric result.",
-    "Only explain the provided result in 2-4 concise sentences.",
+    "Return 3-6 short bullet points separated by newline characters.",
     "Do not mention hidden chain-of-thought, formulas, or implementation details.",
+    "Do not use the | character.",
     "Keep the tone professional, helpful, and user-facing."
   ].join(" ");
 
   const userPrompt = JSON.stringify({
-    instruction: "Explain the deterministic DermIntel result without changing any score or verdict.",
+    instruction: "Explain the deterministic DermIntel result without changing any score or verdict. Use short bullet points, one fact per line, and never use the | character.",
     profile: {
       skinType: profile.skinType || null,
       skinSensitivity: profile.skinSensitivity || null,
@@ -227,3 +239,4 @@ export async function explainDeterministicResult({ result, profile }) {
     explanationModel: null
   };
 }
+

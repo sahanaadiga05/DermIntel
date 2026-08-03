@@ -46,17 +46,6 @@ function buildScoredIngredientRows(ingredientRows = []) {
   });
 }
 
-function buildAlternatives(matchedProduct) {
-  return productCatalog
-    .filter((product) => product.name !== matchedProduct?.name)
-    .slice(0, 3)
-    .map((product) => ({
-      id: product.id,
-      name: product.name,
-      brand: product.brand,
-      category: product.category
-    }));
-}
 
 function buildStrengthsAndWeaknesses(ingredientInsights = []) {
   const strengths = ingredientInsights
@@ -216,7 +205,6 @@ export async function analyzeFormula({ profile, productName, ingredientsText = "
       weaknesses: [],
       pros: [],
       cons: [],
-      alternatives: [],
       message:
         "We couldn't verify the ingredient list for this product. Please paste the ingredients manually or try another source."
     };
@@ -305,8 +293,8 @@ export async function analyzeFormula({ profile, productName, ingredientsText = "
     weaknesses,
     pros: suitability.positives,
     cons: [...safety.safetyNotes, ...suitability.negatives].slice(0, 5),
-    alternatives: buildAlternatives(matchedProduct),
     message: "Verified ingredients analyzed deterministically."
   };
 }
+
 

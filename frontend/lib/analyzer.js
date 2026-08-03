@@ -144,16 +144,6 @@ export function analyzeInput({ profile, productName, manualIngredients }) {
     suitabilityScore -= 2;
   }
 
-  const alternatives = products
-    .filter((product) => product.name !== matchedProduct?.name)
-    .map((product) => ({
-      id: product.id,
-      name: product.name,
-      brand: product.brand,
-      category: product.category
-    }))
-    .slice(0, 3);
-
   return {
     productName: matchedProduct?.name || productName || "Custom Ingredient List",
     matchedIngredients,
@@ -162,7 +152,8 @@ export function analyzeInput({ profile, productName, manualIngredients }) {
     suitabilityScore: clampScore(suitabilityScore, 94),
     verdict: buildVerdict(safetyScore, suitabilityScore),
     pros: [...new Set(pros)].slice(0, 3),
-    cons: [...new Set(cons)].slice(0, 5),
-    alternatives
+    cons: [...new Set(cons)].slice(0, 5)
   };
 }
+
+

@@ -177,7 +177,7 @@ export function LandingPage() {
         <div className="grid gap-2 border-t border-ink/8 pt-3 text-[11px] text-ink/50 sm:grid-cols-3 sm:text-xs">
           <p>01 - Verify the product and its formula</p>
           <p>02 - Compare against your skin passport</p>
-          <p>03 - Explain scores, risks, and alternatives</p>
+          <p>03 - Explain scores and risks</p>
         </div>
       </div>
     </main>
@@ -239,3 +239,4 @@ function GoogleGlyph() {
     </span>
   );
 }
+
